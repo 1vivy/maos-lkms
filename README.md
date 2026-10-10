@@ -52,6 +52,10 @@ Admission checks ELF type/architecture, normalized internal module name, vermagi
 
 CI host checks run on pushes/PRs. ACK and DDK gates require explicit complete prepared inputs and build both architectures. Incomplete header-only DDK images are rejected. Workflows upload artifacts, not deploy or publish releases.
 
+Dependabot updates GitHub Actions only. This repository has no root Cargo
+workspace; the EFI engine's locked Rust dependencies belong to its pinned source
+revision, not an inherited root-level Cargo updater.
+
 ## Runtime contracts
 
 Part projection uses `/config/part-projection/{abi,state,dev,metadata,commit,reset,endpoints/}`. ABI4 sequential metadata records carry generation, logical block size (512/1024/2048/4096), chunk index and 512 bytes of hex data; DM units remain 512 bytes. `pp-meta` freezes target-owned snapshots. Commit validates actual composite geometry, pins endpoints, hides PARTNAMEs and enables real DM partition scanning. Userspace owns partition reread. Ordinary busy removal must fail before reset; reset refuses a live published disk and restores owned namespace/seal changes only after removal. See the project ABI documentation for the precise protocol.
