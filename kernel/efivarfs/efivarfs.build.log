@@ -1,0 +1,24 @@
+command: ['make', '-C', '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common', 'O=/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19', 'M=/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs', 'ARCH=x86_64', 'LLVM=1', 'KBUILD_GENDWARFKSYMS_STABLE=1', 'KBUILD_MODPOST_WARN=1', 'clean']
+make: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'
+make[1]: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+  CLEAN   /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs
+  CLEAN   /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/Module.symvers
+make[1]: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+make: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'
+command: ['make', '-C', '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common', 'O=/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19', 'M=/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs', 'ARCH=x86_64', 'LLVM=1', 'KBUILD_GENDWARFKSYMS_STABLE=1', 'KBUILD_MODPOST_WARN=1', 'modules', '-j13']
+make: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'
+make[1]: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/super.o
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/inode.o
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/file.o
+  PATCH   /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/vars-patched.c
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/metadata.o
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/vars-patched.o
+  LD [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/efivarfs.o
+  MODPOST /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/Module.symvers
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/efivarfs.mod.o
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/.module-common.o
+  LD [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/efivarfs.ko
+  BTF [M] /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivarfs/efivarfs.ko
+make[1]: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+make: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'

@@ -1,28 +1,17 @@
-name: ShellCheck
-
+name: LKM shell contracts
 on:
   push:
-    branches:
-      - 'main'
-      - 'dev'
-    paths:
-      - '.github/workflows/shellcheck.yml'
-      - '**/*.sh'
+    branches: [main, dev]
+    paths: ['scripts/build-lkms.sh', 'kernel/dm-thin-pool/build.sh', '.github/workflows/shellcheck.yml']
   pull_request:
-    branches:
-      - 'main'
-      - 'dev'
-    paths:
-      - '.github/workflows/shellcheck.yml'
-      - '**/*.sh'
-
+    branches: [main, dev]
+    paths: ['scripts/build-lkms.sh', 'kernel/dm-thin-pool/build.sh', '.github/workflows/shellcheck.yml']
+permissions:
+  contents: read
 jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          ignore_paths: ./userspace/esud/src/installer.sh ./.github/scripts/setup-rust-build.sh
+      - name: Check owned build entrypoints
+        run: shellcheck scripts/build-lkms.sh kernel/dm-thin-pool/build.sh

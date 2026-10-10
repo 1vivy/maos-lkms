@@ -1,20 +1,48 @@
-name: Build kernelesp.ko
+name: Independent ACK LKM gates
 on:
   workflow_call:
-  workflow_dispatch:
+    inputs:
+      branch:
+        required: true
+        type: string
+      generation:
+        required: true
+        type: number
+      kmi_src:
+        required: true
+        type: string
+      aarch64_out:
+        required: true
+        type: string
+      x86_64_out:
+        required: true
+        type: string
+permissions:
+  contents: read
 jobs:
-  build-lkm:
+  modules:
+    # Runner supplies real fully-built ACK outputs, including CRCs/System.map.
+    runs-on: [self-hosted, linux, x64, kernelsu-esp-kmi]
     strategy:
+      fail-fast: false
       matrix:
-        kmi:
-          - android12-5.10
-          - android13-5.10
-          - android13-5.15
-          - android14-5.15
-          - android14-6.1
-          - android15-6.6
-          - android16-6.12
-          - android17-6.18
-    uses: ./.github/workflows/ddk-lkm.yml
-    with:
-      kmi: ${{ matrix.kmi }}
+        arch: [aarch64, x86_64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-08
+          components: rust-src
+      - name: Build and admit exact independent LKMs
+        env:
+          BRANCH: ${{ inputs.branch }}
+          GENERATION: ${{ inputs.generation }}
+          KMI_SRC: ${{ inputs.kmi_src }}
+          KMI_OUT: ${{ matrix.arch == 'aarch64' && inputs.aarch64_out || inputs.x86_64_out }}
+          KMI_ARCH: ${{ matrix.arch }}
+        run: sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT" "$GITHUB_WORKSPACE/release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ack-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}-lkms
+          path: release/
+          if-no-files-found: error

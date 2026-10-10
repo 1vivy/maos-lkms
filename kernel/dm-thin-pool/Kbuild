@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+obj-m := dm-thin-pool.o
+dm-thin-pool-y := thin-main.o \
+	src/dm-io.o src/dm-kcopyd.o src/dm-bufio.o \
+	src/dm-bio-prison-v1.o src/dm-bio-prison-v2.o \
+	src/persistent-data/dm-array.o src/persistent-data/dm-bitset.o \
+	src/persistent-data/dm-block-manager.o \
+	src/persistent-data/dm-space-map-common.o \
+	src/persistent-data/dm-space-map-disk.o \
+	src/persistent-data/dm-space-map-metadata.o \
+	src/persistent-data/dm-transaction-manager.o \
+	src/persistent-data/dm-btree.o src/persistent-data/dm-btree-remove.o \
+	src/persistent-data/dm-btree-spine.o src/dm-thin-metadata.o src/dm-thin.o
+ccflags-y += -I$(srctree)/drivers/md -I$(src)/src -I$(src)/src/persistent-data
+ccflags-y += -I$(src)/../../include -include $(src)/private-rename.h

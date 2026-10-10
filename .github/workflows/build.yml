@@ -1,74 +1,69 @@
-name: Build
-
+name: Independent LKM build and admission
 on:
   push:
-    branches: [ "main", "dev", "ci" ]
-    paths:
-      - '.github/workflows/build.yml'
-      - '.github/workflows/build-lkm.yml'
-      - '.github/workflows/ddk-lkm.yml'
-      - '.github/workflows/daemon.yml'
-      - '.github/workflows/daemon-extra.yml'
-      - '.github/workflows/init.yml'
-      - '.github/scripts/setup-rust-build.sh'
-      - '.github/riscv64-cargo.toml'
-      - 'kernel/**'
-      - 'userspace/**'
-      - 'Cargo.lock'
-      - 'Cargo.toml'
+    branches: [main, dev, ci]
+    paths: ['.github/workflows/**', 'kernel/**', 'include/**', 'scripts/**', 'justfile']
   pull_request:
-    branches: [ "main", "dev" ]
-    paths:
-      - '.github/workflows/build.yml'
-      - '.github/workflows/build-lkm.yml'
-      - '.github/workflows/ddk-lkm.yml'
-      - '.github/workflows/daemon.yml'
-      - '.github/workflows/daemon-extra.yml'
-      - '.github/workflows/init.yml'
-      - '.github/scripts/setup-rust-build.sh'
-      - '.github/riscv64-cargo.toml'
-      - 'kernel/**'
-      - 'userspace/**'
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-  workflow_call:
-
+    branches: [main, dev]
+    paths: ['.github/workflows/**', 'kernel/**', 'include/**', 'scripts/**', 'justfile']
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: Fully prepared ACK runner or DDK image
+        required: true
+        type: choice
+        options: [ack, ddk]
+      branch:
+        description: Exact ACK branch (for example android16-6.12)
+        required: true
+        type: string
+      generation:
+        description: Exact KMI generation
+        required: true
+        type: number
+      kmi_src:
+        description: Absolute source path on selected runner/container
+        required: true
+        type: string
+      aarch64_out:
+        description: Absolute complete arm64 output (real CRCs and System.map)
+        required: true
+        type: string
+      x86_64_out:
+        description: Absolute complete x86_64 output (real CRCs and System.map)
+        required: true
+        type: string
+      ddk_release:
+        description: Exact DDK image release, required for DDK lane
+        required: false
+        type: string
 permissions:
   contents: read
-
 jobs:
-  build-lkm:
+  host-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exercise ELF, exact identity and receipt contracts
+        run: python3 -m unittest scripts.test_kmi_modules
+  ack:
+    if: github.event_name == 'workflow_dispatch' && inputs.lane == 'ack'
+    needs: host-contract
     uses: ./.github/workflows/build-lkm.yml
-
-  build-init:
-    uses: ./.github/workflows/init.yml
-
-  build-daemon:
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-linux-android
-          - target: x86_64-linux-android
-          - target: riscv64-linux-android
-    uses: ./.github/workflows/daemon.yml
     with:
-      target: ${{ matrix.target }}
-
-  build-daemon-extra:
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-pc-windows-gnu # windows pc
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin # Intel mac
-            os: macos-latest
-          - target: aarch64-apple-darwin # M chip mac
-            os: macos-latest
-          - target: aarch64-unknown-linux-musl # arm64 Linux
-            os: ubuntu-latest
-          - target: x86_64-unknown-linux-musl # x86 Linux
-            os: ubuntu-latest
-    uses: ./.github/workflows/daemon-extra.yml
+      branch: ${{ inputs.branch }}
+      generation: ${{ inputs.generation }}
+      kmi_src: ${{ inputs.kmi_src }}
+      aarch64_out: ${{ inputs.aarch64_out }}
+      x86_64_out: ${{ inputs.x86_64_out }}
+  ddk:
+    if: github.event_name == 'workflow_dispatch' && inputs.lane == 'ddk'
+    needs: host-contract
+    uses: ./.github/workflows/ddk-lkm.yml
     with:
-      target: ${{ matrix.target }}
-      os: ${{ matrix.os }}
+      branch: ${{ inputs.branch }}
+      generation: ${{ inputs.generation }}
+      kmi_src: ${{ inputs.kmi_src }}
+      aarch64_out: ${{ inputs.aarch64_out }}
+      x86_64_out: ${{ inputs.x86_64_out }}
+      ddk_release: ${{ inputs.ddk_release }}

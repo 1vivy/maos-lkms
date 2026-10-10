@@ -1,0 +1,36 @@
+command: ['make', '-C', '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/phone-common', 'O=/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/gki-out', 'M=/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store', 'ARCH=arm64', 'LLVM=1', 'KBUILD_GENDWARFKSYMS_STABLE=1', 'KBUILD_MODPOST_WARN=1', 'clean']
+make: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/phone-common'
+make[1]: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/gki-out'
+  CLEAN   /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store
+  CLEAN   /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/Module.symvers
+make[1]: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/gki-out'
+make: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/phone-common'
+command: ['make', '-C', '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/phone-common', 'O=/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/gki-out', 'M=/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store', 'ARCH=arm64', 'LLVM=1', 'KBUILD_GENDWARFKSYMS_STABLE=1', 'KBUILD_MODPOST_WARN=1', 'modules', '-j13']
+make: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/phone-common'
+make[1]: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/gki-out'
+warning: the compiler differs from the one used to build the kernel
+  The kernel was built by: Android (12833971, +pgo, +bolt, +lto, +mlgo, based on r536225) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project b3a530ec6537146650e42be89f1089e9a3588460)
+  You are using:           Android (14043575, +pgo, +bolt, +lto, +mlgo, based on r536225) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project b3a530ec6537146650e42be89f1089e9a3588460)
+cd "/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/.source" && RUSTC="/home/vivy/.cargo/bin/rustc" RUSTC_WRAPPER="/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/.source/linux/rustc-wrapper.py" CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 RUSTFLAGS="-Z unstable-options -C relocation-model=static -C panic=immediate-abort -C force-unwind-tables=no -C embed-bitcode=no -Zshare-generics=n -Ccodegen-units=1 -Clto=n -Csymbol-mangling-version=v0 -Cforce-frame-pointers=y -Zsanitizer=kcfi -Zmerge-functions=disabled -Zsanitizer-cfi-normalize-integers" /home/vivy/.cargo/bin/cargo +nightly-2026-08-08 build --locked --offline -Zjson-target-spec -Z build-std=core,compiler_builtins --release --target aarch64-unknown-none-softfloat -p efivar-store-ffi --no-default-features
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store_glue.o
+   Compiling efivar-store-ffi v0.1.0 (/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/.source/crates/efivar-store-ffi)
+    Finished `release` profile [optimized] target(s) in 0.28s
+warning: the following packages contain code that will be rejected by a future version of Rust: core v0.0.0 (/home/vivy/.rustup/toolchains/nightly-2026-08-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core)
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+  LD      /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efvs_engine.o
+  LD [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.o
+  MODPOST /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/Module.symvers
+WARNING: modpost: "kobject_get_unless_zero" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "sysfs_create_mount_point" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "sysfs_remove_mount_point" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "efivars_generic_ops_unregister" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "efivars_register" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "efivars_generic_ops_register" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "efivars_unregister" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+WARNING: modpost: "filp_open" [/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko] undefined!
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.mod.o
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/.module-common.o
+  LD [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko
+  BTF [M] /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/efivar_store/efivar_store.ko
+make[1]: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/gki-out'
+make: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/phone-common'

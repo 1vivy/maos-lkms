@@ -1,0 +1,18 @@
+command: ['make', '-C', '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common', 'O=/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19', 'M=/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection', 'ARCH=x86_64', 'LLVM=1', 'KBUILD_GENDWARFKSYMS_STABLE=1', 'KBUILD_MODPOST_WARN=1', 'clean']
+make: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'
+make[1]: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+  CLEAN   /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/Module.symvers
+make[1]: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+make: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'
+command: ['make', '-C', '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common', 'O=/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19', 'M=/home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection', 'ARCH=x86_64', 'LLVM=1', 'KBUILD_GENDWARFKSYMS_STABLE=1', 'KBUILD_MODPOST_WARN=1', 'modules', '-j13']
+make: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'
+make[1]: Entering directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/gpt.o
+  LD [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/part-projection.o
+  MODPOST /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/Module.symvers
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/part-projection.mod.o
+  CC [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/.module-common.o
+  LD [M]  /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/part-projection.ko
+  BTF [M] /home/vivy/Projects/efisp-projects/.work/kernelsu-esp-lkms/kernel/part-projection/part-projection.ko
+make[1]: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-out19'
+make: Leaving directory '/home/vivy/Projects/efisp-projects/.work/thinpool-proof/.work/cf-common'

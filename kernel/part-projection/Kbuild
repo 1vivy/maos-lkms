@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+obj-m := part-projection.o
+part-projection-y := gpt.o
+ccflags-y += -I$(src)/../../include
