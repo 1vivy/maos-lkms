@@ -1,4 +1,4 @@
-name: Independent ACK LKM gates
+name: Egysk independent ACK LKM gates
 on:
   workflow_call:
     inputs:
@@ -22,7 +22,7 @@ permissions:
 jobs:
   modules:
     # Runner supplies real fully-built ACK outputs, including CRCs/System.map.
-    runs-on: [self-hosted, linux, x64, kernelsu-esp-kmi]
+    runs-on: [self-hosted, linux, x64, egysk-kmi]
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +43,6 @@ jobs:
         run: sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT" "$GITHUB_WORKSPACE/release"
       - uses: actions/upload-artifact@v7
         with:
-          name: ack-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}-lkms
+          name: egysk-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}-lkms
           path: release/
           if-no-files-found: error

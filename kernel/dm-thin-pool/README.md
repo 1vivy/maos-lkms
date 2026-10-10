@@ -117,7 +117,7 @@ ELF/identity/receipt tests; neither recipe builds legacy init or daemon products
 
 CI push/PR runs the host contracts. Manual build dispatch requires explicit
 branch, generation, source and both architecture output paths. The ACK lane uses
-a prepared self-hosted `kernelsu-esp-kmi` runner; the DDK lane uses the exact
+a prepared self-hosted `egysk-kmi` runner; the DDK lane uses the exact
 selected DDK image release. Both architecture gates use real `Module.symvers`,
 `System.map`, `.config` and generated headers. A header-only/minimal DDK image
 without those complete matching references fails closed; modules_prepare is not

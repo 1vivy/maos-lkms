@@ -13,10 +13,10 @@
  */
 #include <linux/init.h>
 #include <linux/module.h>
-#include "kernelsu_esp_lkm.h"
+#include "egysk_lkm.h"
 static bool ready;
-KERNELSU_ESP_LKM_READY_PARAM(ready);
-KERNELSU_ESP_LKM_METADATA("dm-thin-pool", "1", "1", "1");
+EGYSK_LKM_READY_PARAM(ready);
+EGYSK_LKM_METADATA("dm-thin-pool", "1", "1", "1");
 
 int thinpool_private_dm_io_init(void);
 void thinpool_private_dm_io_exit(void);

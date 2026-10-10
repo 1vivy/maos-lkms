@@ -1,4 +1,4 @@
-name: Independent DDK LKM gates
+name: Egysk independent DDK LKM gates
 on:
   workflow_call:
     inputs:
@@ -24,7 +24,7 @@ permissions:
   contents: read
 jobs:
   modules:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, egysk-kmi]
     container:
       image: ghcr.io/ylarod/ddk-min:${{ inputs.branch }}-${{ inputs.ddk_release }}
       # The container sees only the runner workspace plus these binds. ddk-min
@@ -67,6 +67,6 @@ jobs:
           sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT" "$GITHUB_WORKSPACE/release"
       - uses: actions/upload-artifact@v7
         with:
-          name: ddk-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}-lkms
+          name: egysk-ddk-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}-lkms
           path: release/
           if-no-files-found: error

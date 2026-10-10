@@ -1,4 +1,4 @@
-name: Independent LKM build and admission
+name: Egysk independent LKM build and admission
 on:
   push:
     branches: [main, dev, ci]

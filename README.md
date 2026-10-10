@@ -1,21 +1,21 @@
-# KernelSU ESP LKMs
+# Egysk LKMs
 
-Independent Linux modules, colocated for source and release management. No module depends on the KernelSU ESP helper, daemon, credential provider or root runtime. The preserved `legacy/esu-pre-magisk-20261009` tag records the pre-split tree; history is not rewritten.
+Independent Linux modules, colocated for source and release management. No module depends on the Egysk helper, daemon, credential provider or root runtime. The preserved `legacy/esu-pre-magisk-20261009` tag records the pre-split tree; history is not rewritten.
 
 | Project | Artifact / internal name | Interface |
 | --- | --- | --- |
 | [`dm-thin-pool`](kernel/dm-thin-pool/) | `dm-thin-pool.ko` / `dm_thin_pool` | Device-mapper thin-pool/thin targets; owned fork, private symbol renames and existing target behavior |
-| [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 3 at `/config/part-projection` |
+| [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 4 and upstream DM pp-range/pp-meta/pp-hole at `/config/part-projection` |
 | [`efivarfs`](kernel/efivarfs/) | `efivarfs.ko` / `efivarfs` | Upstream efivarfs plus the project-GUID patch |
 | [`efivar_store`](kernel/efivar_store/) | `efivar_store.ko` / `efivar_store` | Block-backed EFI variable service; pinned Rust EFVS engine behind C glue |
 
-Each directory has its own Kbuild/Makefile and provenance. Shared code is limited to [`include/kernelsu_esp_lkm.h`](include/kernelsu_esp_lkm.h): descriptive name/version/ABI/criticality metadata and applicable readiness parameters. Metadata is not authorization. The core product owns rdinit and its ELF prebinding loader; the modules product owns `ppconf`, platform/storage helpers, Android lifecycle scripts and packaging.
+Each directory has its own Kbuild/Makefile and provenance. Shared code is limited to [`include/egysk_lkm.h`](include/egysk_lkm.h): descriptive `egysk_*` name/version/ABI/criticality metadata and applicable readiness parameters. Metadata is not authorization. The core product owns rdinit and its ELF prebinding loader; the modules product owns `ppconf`, platform/storage helpers, Android lifecycle scripts and packaging.
 
 ## Build and admit exact artifacts
 
 Supply the complete matching ACK source/output, not merely kernel headers. The output must contain `.config`, `Module.symvers`, `System.map` and `include/generated/utsrelease.h`. Supply the matching LLVM toolchain through PATH. Supported architecture names are `aarch64` and `x86_64`.
 
-The DDK container lane binds each caller-supplied absolute path (`kmi_src`, `aarch64_out`, `x86_64_out`) into the job container at the identical path; nothing is copied or synthesized inside the image, and an unbound path is simply absent there. ddk-min exports an arm64 `CROSS_COMPILE`, which kbuild turns into a `--target=` that contradicts the x86_64 leg, so the workflow unsets it and lets kbuild derive the target from `ARCH`. The pinned `nightly-2026-08-08` toolchain with `rust-src` must be installed inside that container; the build fails closed without it.
+Both real-build lanes run on the prepared self-hosted `egysk-kmi` runner; a hosted empty runner cannot provide caller-owned complete outputs. The DDK container lane binds each caller-supplied absolute path (`kmi_src`, `aarch64_out`, `x86_64_out`) into the job container at the identical path; nothing is copied or synthesized inside the image, and an unbound path is simply absent there. ddk-min exports an arm64 `CROSS_COMPILE`, which kbuild turns into a `--target=` that contradicts the x86_64 leg, so the workflow unsets it and lets kbuild derive the target from `ARCH`. The pinned `nightly-2026-08-08` toolchain with `rust-src` must be installed inside that container; the build fails closed without it.
 
 ```sh
 python3 -m unittest scripts.test_kmi_modules
@@ -54,13 +54,17 @@ CI host checks run on pushes/PRs. ACK and DDK gates require explicit complete pr
 
 ## Runtime contracts
 
-Part projection uses `/config/part-projection/{abi,format,state,last_error,commit,destroy,projections/,hide/}`. Each projection has `dev` and `ro`; hidden backends are canonical major:minor directory names. Commit accepts `1` or `seal`. Destroy accepts `1` only for an unsealed active view with no live openers/holders; busy or sealed views remain intact. Failed commits release acquired handles and permit correction. The old `/dev/gptctl` transport is removed. See the project ABI documentation for bounds and lifetime rules.
+Part projection uses `/config/part-projection/{abi,state,dev,metadata,commit,reset,endpoints/}`. ABI4 sequential metadata records carry generation, logical block size (512/1024/2048/4096), chunk index and 512 bytes of hex data; DM units remain 512 bytes. `pp-meta` freezes target-owned snapshots. Commit validates actual composite geometry, pins endpoints, hides PARTNAMEs and enables real DM partition scanning. Userspace owns partition reread. Ordinary busy removal must fail before reset; reset refuses a live published disk and restores owned namespace/seal changes only after removal. See the project ABI documentation for the precise protocol.
 
 Mount filesystem type `efivarfs` at `/sys/firmware/efi/efivars`. Mount/read success, not directory presence, establishes frontend readiness. The backend accepts mutually exclusive `partuuid=<unique-GPT-UUID>` or `dev=<major>:<minor>`, or the existing `/chosen/efivar-store,partuuid` DT property. No label or fixed unique GUID substitutes for that selector. Linux refuses blank stores without writing; firmware owns initialization and compaction.
 
 Backing-file reads, writes, fsync and final fput run under the retained file opener credentials via `override_creds`/`revert_creds`. Load before Android policy, and permit the opener domain to access that block device. No `esp` credential or provider ABI is involved. EFI sysfs cleanup removes only objects the backend created, never a native EFI tree.
 
 ## Verification boundary
+
+The historical build/runtime records below describe the earlier source revisions,
+not admission of this ABI4 cutover. Parent exact gen6 builds and device validation
+are required for the current source.
 
 The current arm64 `android16-6.12-6` builds passed exact artifact admission. The standalone backend and frontend additionally passed the QEMU immediate-read/update/delete/reboot/compaction/torn-tail/blank-refusal gate. That VM has no enforcing Android policy: it does not prove HAL-domain access, PIN unlock, native EFI replacement, or phone boot. The full platform/OTA and enforcing-device gates remain separate from these source/build checks.
 
