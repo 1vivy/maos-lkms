@@ -10,5 +10,7 @@ __pycache__
 /dist
 *.ko.compat.json
 /.worktrees/
-/modules/efivarfs/vars-patched.c
-/modules/efivar_store/.source/
+/kernel/efivarfs/vars-patched.c
+/kernel/efivar_store/.source/
+/kernel/efivar_store/efvs-*.json
+/kernel/*/*.build.log
