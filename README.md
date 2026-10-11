@@ -5,7 +5,7 @@ Independent Linux modules, colocated for source and release management. No modul
 | Project | Artifact / internal name | Interface |
 | --- | --- | --- |
 | [`dm-thin-pool`](kernel/dm-thin-pool/) | `dm-thin-pool.ko` / `dm_thin_pool` | Device-mapper thin-pool/thin targets; owned fork, private symbol renames and existing target behavior |
-| [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 4 and upstream DM pp-range/pp-meta/pp-hole at `/config/part-projection` |
+| [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 5 and upstream DM pp-range/pp-meta/pp-hole at `/config/part-projection` |
 | [`efivarfs`](kernel/efivarfs/) | `efivarfs.ko` / `efivarfs` | Upstream efivarfs plus the project-GUID patch |
 | [`efivar_store`](kernel/efivar_store/) | `efivar_store.ko` / `efivar_store` | Block-backed EFI variable service; pinned Rust EFVS engine behind C glue |
 
@@ -58,7 +58,7 @@ revision, not an inherited root-level Cargo updater.
 
 ## Runtime contracts
 
-Part projection uses `/config/part-projection/{abi,state,dev,metadata,commit,reset,endpoints/}`. ABI4 sequential metadata records carry generation, logical block size (512/1024/2048/4096), chunk index and 512 bytes of hex data; DM units remain 512 bytes. `pp-meta` freezes target-owned snapshots. Commit validates actual composite geometry, pins endpoints, hides PARTNAMEs and enables real DM partition scanning. Userspace owns partition reread. Ordinary busy removal must fail before reset; reset refuses a live published disk and restores owned namespace/seal changes only after removal. See the project ABI documentation for the precise protocol.
+Part projection uses `/config/part-projection/{abi,state,dev,anchor,metadata,commit,reset,endpoints/}`. ABI5 sequential metadata records carry generation, logical block size (512/1024/2048/4096), chunk index and 512 bytes of hex data; DM units remain 512 bytes. `pp-meta` freezes target-owned snapshots. Commit validates actual composite geometry, pins endpoints, adopts optional physical boot-device ancestry, hides PARTNAMEs and enables real DM partition scanning. The anchor is independent of endpoint hide/seal policy. Userspace owns partition reread. Ordinary busy removal must fail before reset; reset refuses a live published disk and restores owned namespace/seal changes only after removal. See the project ABI documentation for the precise protocol.
 
 Mount filesystem type `efivarfs` at `/sys/firmware/efi/efivars`. Mount/read success, not directory presence, establishes frontend readiness. The backend accepts mutually exclusive `partuuid=<unique-GPT-UUID>` or `dev=<major>:<minor>`, or the existing `/chosen/efivar-store,partuuid` DT property. No label or fixed unique GUID substitutes for that selector. Linux refuses blank stores without writing; firmware owns initialization and compaction.
 
@@ -66,9 +66,11 @@ Backing-file reads, writes, fsync and final fput run under the retained file ope
 
 ## Verification boundary
 
-The historical build/runtime records below describe the earlier source revisions,
-not admission of this ABI4 cutover. Parent exact gen6 builds and device validation
-are required for the current source.
+The historical build/runtime records below describe earlier source revisions.
+ABI5 separately passed exact gen6 admission on both architectures and an
+integrated permissive phone boot with stock init mounting projected `/metadata`
+and encrypted `/data`. Anchored seal/reload/teardown and enforcing operation
+remain separate qualifications.
 
 The current arm64 `android16-6.12-6` builds passed exact artifact admission. The standalone backend and frontend additionally passed the QEMU immediate-read/update/delete/reboot/compaction/torn-tail/blank-refusal gate. That VM has no enforcing Android policy: it does not prove HAL-domain access, PIN unlock, native EFI replacement, or phone boot. The full platform/OTA and enforcing-device gates remain separate from these source/build checks.
 

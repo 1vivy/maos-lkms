@@ -1,16 +1,18 @@
 # Provenance and licensing
 
-Current ABI4 `configfs.c` and `target.c` are ported from the selected local
+The ABI4 base of `configfs.c` and `target.c` is ported from the selected local
 `mockups/2026-10-09/partformer/kernel` source. The production port adds bounded
 four-field 512..4096 logical geometry uploads, target queue hints and composite
 geometry admission. `pp-range` follows upstream dm-linear (Sistina Software
 2001-2003); its provenance comment is retained. All source remains GPL-2.0-only.
 DM owns data BIO, queue and crypto stacking; the former standalone gendisk,
 private GPT-generation and crypto-profile implementation has been removed.
+ABI5 adds explicit physical namespace ancestry using upstream `device_move`;
+it does not add a disk driver or change the DM data path.
 
 The following records describe the retired standalone implementation and its
 historical verification only; they are retained as provenance, not current ABI
-instructions or evidence for ABI4.
+instructions or evidence for ABI5.
 
 `gpt.c`, `gpt_uapi.h`, `Makefile` and the module documentation are newly authored
 for esu's single in-memory GPT projection contract. This is not a fork of a

@@ -13,6 +13,8 @@ static bool active, sealed;
 static struct gendisk *published;
 static unsigned int saved_flags;
 static dev_t publish_dev;
+static dev_t anchor_dev;
+static struct device *anchor_parent;
 static struct configfs_subsystem subsystem;
 static struct config_group endpoints;
 static LIST_HEAD(items);
@@ -113,6 +115,30 @@ static bool writable_part(struct block_device *b)
   if (e->writable && file_bdev(e->file)==b) return true;
  return false;
 }
+/* Namespace ancestry is independent of endpoint access and sealing policy. */
+static int prepare_anchor(void)
+{
+ struct file *file;
+ struct gendisk *disk;
+ struct device *parent, *ancestor;
+ int err=0;
+ if (!anchor_dev) return 0;
+ if (disk_to_dev(published)->parent ||
+     !(published->flags & GENHD_FL_NO_PART)) return -EINVAL;
+ file=bdev_file_open_by_dev(anchor_dev,BLK_OPEN_READ,NULL,NULL);
+ if (IS_ERR(file)) return PTR_ERR(file);
+ disk=file_bdev(file)->bd_disk;
+ parent=disk_to_dev(disk)->parent;
+ if (disk==published || !parent || !device_is_registered(parent)) {
+  err=-EINVAL; goto out;
+ }
+ for (ancestor=parent; ancestor; ancestor=ancestor->parent)
+  if (ancestor==disk_to_dev(published)) { err=-EINVAL; goto out; }
+ anchor_parent=get_device(parent);
+out:
+ bdev_fput(file);
+ return err;
+}
 static void restore(void)
 {
  struct endpoint *e;
@@ -143,6 +169,7 @@ static void restore(void)
   mutex_unlock(&published->open_mutex);
   put_disk(published); published=NULL;
  }
+ put_device(anchor_parent); anchor_parent=NULL;
  active=false; sealed=false; metadata_ready=false; metadata_frozen=false; metadata_next=0;
 }
 static int seal_disk(struct gendisk *disk)
@@ -197,9 +224,17 @@ static int commit(bool seal)
   if (IS_ERR(e->whole)) { err=PTR_ERR(e->whole); e->whole=NULL; goto fail; }
   if (e->hide) memcpy(e->name,file_bdev(e->file)->bd_meta_info->volname,sizeof(e->name));
  }
+ err=prepare_anchor(); if (err) goto fail;
  /* Do not mutate namespace until every reference and rollback record exists. */
  if (seal) list_for_each_entry(e,&items,entry) {
   err=seal_disk(file_bdev(e->file)->bd_disk); if (err) goto fail;
+ }
+ /* Last fallible step: reset is allowed only after the DM disk is gone,
+  * so it must never try to move an unregistered disk back to virtual.
+  * device_move owns its own parent reference; ours spans publication/reset. */
+ if (anchor_parent) {
+  err=device_move(disk_to_dev(published),anchor_parent,DPM_ORDER_DEV_AFTER_PARENT);
+  if (err) goto fail;
  }
  list_for_each_entry(e,&items,entry) if (e->hide) {
   file_bdev(e->file)->bd_meta_info->volname[0]=0;
@@ -247,11 +282,25 @@ static void drop(struct config_group *g,struct config_item *i)
 { mutex_lock(&lock); list_del(&ep(i)->entry); endpoint_count--; mutex_unlock(&lock); config_item_put(i); }
 static struct configfs_group_operations group_ops={ .make_item=make,.drop_item=drop };
 static const struct config_item_type group_type={ .ct_owner=THIS_MODULE,.ct_group_ops=&group_ops };
-static ssize_t pp_abi_show(struct config_item *i,char *b) { return sysfs_emit(b,"4\n"); }
+static ssize_t pp_abi_show(struct config_item *i,char *b) { return sysfs_emit(b,"5\n"); }
 static ssize_t pp_state_show(struct config_item *i,char *b) { return sysfs_emit(b,"%s\n",active ? (sealed ? "sealed" : "active") : "idle"); }
 static ssize_t pp_dev_show(struct config_item *i,char *b) { return sysfs_emit(b,"%u:%u\n",MAJOR(publish_dev),MINOR(publish_dev)); }
 static ssize_t pp_dev_store(struct config_item *i,const char *b,size_t n)
 { int err; if (!capable(CAP_SYS_ADMIN)) return -EPERM; mutex_lock(&lock); err=active ? -EBUSY : parse_dev(b,&publish_dev); mutex_unlock(&lock); return err ? err : n; }
+static ssize_t pp_anchor_show(struct config_item *i,char *b)
+{ return anchor_dev ? sysfs_emit(b,"%u:%u\n",MAJOR(anchor_dev),MINOR(anchor_dev)) : sysfs_emit(b,"none\n"); }
+static ssize_t pp_anchor_store(struct config_item *i,const char *b,size_t n)
+{
+ int err=0;
+ dev_t next;
+ if (!capable(CAP_SYS_ADMIN)) return -EPERM;
+ mutex_lock(&lock);
+ if (active) err=-EBUSY;
+ else if (sysfs_streq(b,"none")) anchor_dev=0;
+ else { err=parse_dev(b,&next); if (!err) anchor_dev=next; }
+ mutex_unlock(&lock);
+ return err ? err : n;
+}
 static ssize_t pp_commit_store(struct config_item *i,const char *b,size_t n)
 {
  int err;
@@ -281,9 +330,10 @@ static ssize_t pp_reset_store(struct config_item *i,const char *b,size_t n)
 CONFIGFS_ATTR_RO(pp_,abi);
 CONFIGFS_ATTR_RO(pp_,state);
 CONFIGFS_ATTR(pp_,dev);
+CONFIGFS_ATTR(pp_,anchor);
 CONFIGFS_ATTR_WO(pp_,commit);
 CONFIGFS_ATTR_WO(pp_,reset);
-static struct configfs_attribute *attrs[]={ &pp_attr_abi,&pp_attr_state,&pp_attr_dev,&pp_attr_metadata,&pp_attr_commit,&pp_attr_reset,NULL };
+static struct configfs_attribute *attrs[]={ &pp_attr_abi,&pp_attr_state,&pp_attr_dev,&pp_attr_anchor,&pp_attr_metadata,&pp_attr_commit,&pp_attr_reset,NULL };
 static const struct config_item_type type={ .ct_owner=THIS_MODULE,.ct_attrs=attrs };
 static int __init init(void)
 {
@@ -301,6 +351,6 @@ static int __init init(void)
 static void __exit fini(void) { configfs_unregister_subsystem(&subsystem); pp_target_exit(); }
 module_init(init); module_exit(fini);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("DM-composed partition publication and endpoint namespace controls ABI4");
+MODULE_DESCRIPTION("DM-composed partition publication and endpoint namespace controls ABI5");
 #include "egysk_lkm.h"
-EGYSK_LKM_METADATA("part-projection", "2", "4", "1");
+EGYSK_LKM_METADATA("part-projection", "3", "5", "1");
