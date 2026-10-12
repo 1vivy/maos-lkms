@@ -1,4 +1,4 @@
-# Egysk LKMs
+# maos-lkms
 
 **Status (2026-10-12)** — Independent exact-KMI modules; projection uses ABI6.
 

@@ -9,8 +9,8 @@ top-level `LICENSE` (GPL-3.0) does not cover this subtree.
 The historical throwaway proof workspace contained the source bundle, fork patch,
 build records and phone artifact from which this subtree was prepared. That
 workspace was proof material, not a product repository. The vendored dm-thin
-sources, private rename header, fork patch, and frozen evidence remain auditable
-here without depending on the original local workspace.
+sources, private rename header and fork patch remain auditable here without
+depending on the original local workspace.
 
 ## 1. Origin
 
@@ -166,7 +166,7 @@ Only the build and metadata surface changed; the vendored `.c`/`.h` files and
   only out of tree from caller-provided `KMI_SRC`/`KMI_OUT` for android16-6.12 generation 6,
   with `JOBS` capped at 13. The shared gate admits matching version CRCs and
   non-versioned imports present in `System.map`.
-- `build.sh`, `README.md`, `PROVENANCE.md`, `LICENSE` and `evidence/` are new.
+- `build.sh`, `README.md`, `PROVENANCE.md` and `LICENSE` are new.
   `LICENSE` is the proof kernel tree's `LICENSES/preferred/GPL-2.0` file copied
   byte for byte (SHA-256
   `f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79`): its
@@ -175,21 +175,7 @@ Only the build and metadata surface changed; the vendored `.c`/`.h` files and
   that text. It is not a grant of "or later": this subtree is GPL-2.0-only
   throughout.
 
-## 5. Historical proof evidence
-
-`evidence/phone-d3144fcc5f04/` holds the frozen phone artifact as
-`thinpool-private-d3144fcc5f04.ko.zst` (archive SHA-256
-`2191811acf9e0c2ef3e0f45a3c5cb0d77f0516ee1c1c7334dac5e60d3914c200`;
-decompressed module SHA-256
-`d3144fcc5f049d09b952219e19d8ae837617fc27b60f8cfd0e28388aaca4b4d3`)
-with its `imports` and `modversions` manifests and a record summary. It was
-built from the section 2 sources *before* the section 4 generation/ready
-changes, so it carries the old module name and no generation parameter. It is
-retained as historical proof that the vendored code loads and registers on the
-phone; it is **not** a build of the current subtree and does not prove the
-generation/ready ABI. See `evidence/phone-d3144fcc5f04/README.md`.
-
-## 6. Rebuilding
+## 5. Rebuilding
 
 See `README.md` in this directory. A rebuilt `thin.ko` includes the current
-readiness interface, unlike the historical evidence artifact.
+readiness interface.

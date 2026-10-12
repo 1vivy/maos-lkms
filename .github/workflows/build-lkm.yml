@@ -1,4 +1,4 @@
-name: Egysk independent ACK LKM gates
+name: maos-lkms independent ACK LKM gates
 on:
   workflow_call:
     inputs:
@@ -43,6 +43,6 @@ jobs:
         run: sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT" "$GITHUB_WORKSPACE/release"
       - uses: actions/upload-artifact@v7
         with:
-          name: egysk-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}-lkms
+          name: maos-lkms-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}
           path: release/
           if-no-files-found: error

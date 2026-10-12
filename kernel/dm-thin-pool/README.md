@@ -3,8 +3,8 @@
 A separate **GPL-2.0-only** out-of-tree kernel module that provides the
 device-mapper `thin-pool` and `thin` targets the multi-ROM thin-storage layout
 needs. It is vendored from the Linux kernel dm-thin family and forked to use
-only exported KMI surface; `PROVENANCE.md` records the exact origin, file set,
-patch and proof evidence.
+only exported KMI surface; `PROVENANCE.md` records the exact origin, file set and
+patch.
 
 `dm-thin-pool.ko` is independent and never linked to a product/root runtime. The
 repository's top-level `LICENSE` does **not** cover this subtree:
@@ -85,8 +85,7 @@ make -C kernel/dm-thin-pool KMI_SRC=/path/to/kernel KMI_OUT=/path/to/out KMI_BRA
 | `Kbuild`, `Makefile` | standalone module definition and exact-identity build wrapper |
 | `build.sh` | scripted entry point forwarding the explicit KMI identity |
 | `patches/0001-fork-dm-thin-for-exported-KMI-surface.patch` | the fork that adapts the vendored sources to the exported KMI |
-| `evidence/phone-d3144fcc5f04/` | frozen pre-import phone artifact, its import/modversion manifests and record summary |
-| `PROVENANCE.md` | origin, exact file set with hashes, modifications, proof evidence, licensing |
+| `PROVENANCE.md` | origin, exact file set with hashes, modifications, licensing |
 | `LICENSE` | verbatim GPL-2.0 text |
 
 ## Verifying a built module
@@ -100,11 +99,10 @@ dmsetup targets                         # thin-pool and thin, both version 1.23.
 ```
 
 The recorded proof for the vendored sources covers: arm64 build, valid modpost
-and signed `insmod` against ACK `f1bdb13583da85a47fcf1632a78ef52d6e6da651`; the
-full dm-thin behavior matrix in QEMU (snapshots, discard, partial-block zeroing,
-`dm-default-key` ciphertext equality, ENOSPC modes, forced-reset metadata
-recovery); and the phone-matched artifact below. `evidence/` states exactly what
-the frozen artifact does and does not prove.
+and signed `insmod` against ACK `f1bdb13583da85a47fcf1632a78ef52d6e6da651`; and
+the full dm-thin behavior matrix in QEMU (snapshots, discard, partial-block
+zeroing, `dm-default-key` ciphertext equality, ENOSPC modes, forced-reset
+metadata recovery).
 
 ## Product build gates
 
