@@ -1,11 +1,13 @@
 # Egysk LKMs
 
+**Status (2026-10-12)** — Independent exact-KMI modules; projection uses ABI6.
+
 Independent Linux modules, colocated for source and release management. No module depends on the Egysk helper, daemon, credential provider or root runtime. The preserved `legacy/esu-pre-magisk-20261009` tag records the pre-split tree; history is not rewritten.
 
 | Project | Artifact / internal name | Interface |
 | --- | --- | --- |
 | [`dm-thin-pool`](kernel/dm-thin-pool/) | `dm-thin-pool.ko` / `dm_thin_pool` | Device-mapper thin-pool/thin targets; owned fork, private symbol renames and existing target behavior |
-| [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 5 and upstream DM pp-range/pp-meta/pp-hole at `/config/part-projection` |
+| [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 6, named DM disks and pp-range/pp-meta/pp-hole at `/config/part-projection` |
 | [`efivarfs`](kernel/efivarfs/) | `efivarfs.ko` / `efivarfs` | Upstream efivarfs plus the project-GUID patch |
 | [`efivar_store`](kernel/efivar_store/) | `efivar_store.ko` / `efivar_store` | Block-backed EFI variable service; pinned Rust EFVS engine behind C glue |
 
@@ -58,7 +60,16 @@ revision, not an inherited root-level Cargo updater.
 
 ## Runtime contracts
 
-Part projection uses `/config/part-projection/{abi,state,dev,anchor,metadata,commit,reset,endpoints/}`. ABI5 sequential metadata records carry generation, logical block size (512/1024/2048/4096), chunk index and 512 bytes of hex data; DM units remain 512 bytes. `pp-meta` freezes target-owned snapshots. Commit validates actual composite geometry, pins endpoints, adopts optional physical boot-device ancestry, hides PARTNAMEs and enables real DM partition scanning. The anchor is independent of endpoint hide/seal policy. Userspace owns partition reread. Ordinary busy removal must fail before reset; reset refuses a live published disk and restores owned namespace/seal changes only after removal. See the project ABI documentation for the precise protocol.
+Part projection exposes root `abi/state/commit/reset`, shared
+`endpoints/NAME/{dev,hide,writable}` and per-disk
+`disks/NAME/{dev,anchor,metadata}` under `/config/part-projection`. ABI6 preserves
+512/1024/2048/4096-byte geometry independently for every disk; DM units stay 512
+bytes. `pp-meta NAME OFFSET` freezes target-owned GPT snapshots. Shared commit
+pins participants, validates every disk and anchor, owns physical hiding/sealing,
+and enables partition scanning only after all moves succeed. Partial move
+failure retains ownership until every mapping is ordinarily removed. Reset
+refuses any live/registered/open publication, even after another disk was
+removed. Userspace rereads each GPT. See the project ABI documentation.
 
 Mount filesystem type `efivarfs` at `/sys/firmware/efi/efivars`. Mount/read success, not directory presence, establishes frontend readiness. The backend accepts mutually exclusive `partuuid=<unique-GPT-UUID>` or `dev=<major>:<minor>`, or the existing `/chosen/efivar-store,partuuid` DT property. No label or fixed unique GUID substitutes for that selector. Linux refuses blank stores without writing; firmware owns initialization and compaction.
 

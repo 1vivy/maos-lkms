@@ -79,11 +79,11 @@ static int meta_ctr(struct dm_target *ti, unsigned int argc, char **argv)
  unsigned int sector;
  struct pp_meta *data;
  int err;
- if (argc != 1 || !ti->len || ti->len > 88 || kstrtouint(argv[0],10,&sector))
+ if (argc != 2 || !ti->len || ti->len > 88 || kstrtouint(argv[1],10,&sector))
   return -EINVAL;
  data=kmalloc(sizeof(*data) + (ti->len << SECTOR_SHIFT),GFP_KERNEL);
  if (!data) return -ENOMEM;
- err=pp_metadata_copy(data->data,sector,ti->len,&data->lbs);
+ err=pp_metadata_copy(argv[0],data->data,sector,ti->len,&data->lbs);
  if (err) { kfree(data); return err; }
  if ((ti->begin | ti->len) & ((data->lbs / 512) - 1)) { kfree(data); return -EINVAL; }
  ti->private=data;
@@ -112,7 +112,11 @@ static int meta_map(struct dm_target *ti,struct bio *bio)
 static int hole_map(struct dm_target *ti,struct bio *bio)
 {
  if (empty_flush(bio)) { bio_endio(bio); return DM_MAPIO_SUBMITTED; }
- return DM_MAPIO_KILL;
+ if (bio_op(bio)!=REQ_OP_READ || bio_has_crypt_ctx(bio)) return DM_MAPIO_KILL;
+ /* Sub-page GPT edges share cache pages with unallocated disk space. */
+ zero_fill_bio(bio);
+ bio_endio(bio);
+ return DM_MAPIO_SUBMITTED;
 }
 static int hole_ctr(struct dm_target *ti,unsigned int argc,char **argv)
 { if (argc) return -EINVAL; ti->num_flush_bios=1; return 0; }
@@ -123,11 +127,11 @@ static void meta_hints(struct dm_target *ti, struct queue_limits *limits)
  limits->physical_block_size=max(limits->physical_block_size,m->lbs);
 }
 static struct target_type meta_target={
- .name="pp-meta",.version={1,0,0},.module=THIS_MODULE,
+ .name="pp-meta",.version={2,0,0},.module=THIS_MODULE,
  .features=DM_TARGET_PASSES_CRYPTO,.ctr=meta_ctr,.dtr=meta_dtr,.map=meta_map,.io_hints=meta_hints,
 };
 static struct target_type hole_target={
- .name="pp-hole",.version={1,0,0},.module=THIS_MODULE,
+ .name="pp-hole",.version={1,1,0},.module=THIS_MODULE,
  .features=DM_TARGET_PASSES_CRYPTO,.ctr=hole_ctr,.map=hole_map,
 };
 int pp_target_init(void)
