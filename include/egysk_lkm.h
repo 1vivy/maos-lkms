@@ -2,7 +2,7 @@
 #ifndef EGYSK_LKM_H
 #define EGYSK_LKM_H
 #include <linux/module.h>
-/* Descriptive build/load receipts, never authorization or a readiness shortcut. */
+/* Descriptive build/load metadata, never authorization or a readiness shortcut. */
 #define EGYSK_LKM_METADATA(name, version, abi, critical) \
 	MODULE_INFO(egysk_name, name); \
 	MODULE_INFO(egysk_version, version); \

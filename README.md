@@ -25,18 +25,18 @@ sh scripts/build-lkms.sh android16-6.12 6 aarch64 \
     /path/to/source /path/to/complete-output /path/to/artifacts
 ```
 
-The gate builds all four projects, verifies the exact copied payload and writes:
+The gate builds all four projects, admits the exact copied bytes against the supplied kernel output and writes:
 
 ```text
 artifacts/<branch>-<generation>/<arch>/
   dm-thin-pool.ko
-  dm-thin-pool.ko.compat.json
+  dm-thin-pool.ko.build.json
   part-projection.ko
-  part-projection.ko.compat.json
+  part-projection.ko.build.json
   efivarfs.ko
-  efivarfs.ko.compat.json
+  efivarfs.ko.build.json
   efivar_store.ko
-  efivar_store.ko.compat.json
+  efivar_store.ko.build.json
 ```
 
 For one project:
@@ -48,7 +48,7 @@ python3 scripts/kmi_modules.py build \
     --kmi-src /path/to/source --kmi-out /path/to/complete-output
 ```
 
-Admission checks ELF type/architecture, normalized internal module name, vermagic flags, exported CRCs, private imports against the supplied kernel map, and schema-2 receipt/input hashes. Private vmlinux imports require a compatible loader or suitable exports; successful compilation alone is not a loading guarantee. Never strip or rewrite admitted bytes afterward. A different layout, CFI scheme, signature policy or KMI cannot be repaired by symbol lookup.
+Admission checks ELF type/architecture, normalized internal module name, vermagic flags, exported CRCs and private imports against the supplied kernel map. It runs at build time from the module plus `--kmi-out` alone and persists nothing; `just verify` and `scripts/build-lkms.sh` re-run it on the exact copied bytes. Each build also writes `<module>.ko.build.json` beside the artifact: the KMI branch/generation, the pinned source revision, the module hash, the kernel-input hashes (`Module.symvers`, `System.map`, `utsrelease.h`) keyed by basename, the private imports the loader must resolve and the `.modinfo` name/vermagic. That file is descriptive release output only — no consumer reads or re-checks it, and it is never packaged into a payload or seed. Private vmlinux imports require a compatible loader or suitable exports; successful compilation alone is not a loading guarantee. Never strip or rewrite admitted bytes afterward. A different layout, CFI scheme, signature policy or KMI cannot be repaired by symbol lookup.
 
 `efivar_store` materializes exactly [`SOURCE_REVISION`](kernel/efivar_store/SOURCE_REVISION). `EFIVAR_STORE_REPO` may select a local repository containing that same commit; it does not change the pin. Its freestanding engine uses pinned `nightly-2026-08-08` with rust-src and locked dependencies; `CONFIG_RUST` is not required. The upstream source also ships standalone `linux/Kbuild` and non-autoloading `dkms.conf`; private imports still need exports or caller-owned prebinding.
 
@@ -85,6 +85,6 @@ remain separate qualifications.
 
 The current arm64 `android16-6.12-6` builds passed exact artifact admission. The standalone backend and frontend additionally passed the QEMU immediate-read/update/delete/reboot/compaction/torn-tail/blank-refusal gate. That VM has no enforcing Android policy: it does not prove HAL-domain access, PIN unlock, native EFI replacement, or phone boot. The full platform/OTA and enforcing-device gates remain separate from these source/build checks.
 
-Both architectures were also built and admitted inside the dated `ghcr.io/ylarod/ddk-min:android16-6.12-20260828` container (digest `sha256:fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee`): all four projects and the pinned standalone `linux/Kbuild` path, against the caller-supplied complete outputs bound into the container. Two independent runs produced byte-identical modules, and every schema-2 receipt matched the shipped artifact bytes and kernel-input digests. That run loaded no module and touched no device, so it proves compilation and admission only. The arm64 lane recorded `warning: the compiler differs from the one used to build the kernel` (image clang build `14043575` versus the `12833971` that built the supplied arm64 output); the x86_64 Cuttlefish output carries a recorded stock `module_layout` CRC adjustment, so it is an admitted build against that supplied output, not a fully source-qualified self-built kernel.
+Both architectures were also built and admitted inside the dated `ghcr.io/ylarod/ddk-min:android16-6.12-20260828` container (digest `sha256:fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee`): all four projects and the pinned standalone `linux/Kbuild` path, against the caller-supplied complete outputs bound into the container. Two independent runs produced byte-identical modules, and every per-module build record matched the shipped artifact bytes and kernel-input digests. That run loaded no module and touched no device, so it proves compilation and admission only. The arm64 lane recorded `warning: the compiler differs from the one used to build the kernel` (image clang build `14043575` versus the `12833971` that built the supplied arm64 output); the x86_64 Cuttlefish output carries a recorded stock `module_layout` CRC adjustment, so it is an admitted build against that supplied output, not a fully source-qualified self-built kernel.
 
 Retain the per-project licenses and provenance. Root-level inherited tooling remains covered by [`LICENSE`](LICENSE); kernel projects carry their own license declarations.

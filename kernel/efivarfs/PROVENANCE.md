@@ -22,8 +22,9 @@ shim. The filesystem's own upstream module entry point remains unchanged.
 Build with `make -C kernel/efivarfs KMI_SRC=... KMI_OUT=... JOBS=4
 KMI_BRANCH=android16-6.12 KMI_GENERATION=6 KMI_ARCH=aarch64`.
 Standalone Kbuild works with configured ACK/GKI/DDK outputs, arm64 and x86_64.
-The shared admission writes a schema-2 `.ko.compat.json` binding exact input and
-artifact bytes; private imports require a relocating loader if not exported.
+The shared admission checks the built module against the exact configured kernel
+output and writes `<module>.ko.build.json` beside it as release information only;
+private imports require a relocating loader if not exported.
 `metadata.c` only adds descriptive common `.modinfo` fields, not another init
 entrypoint or fake ready flag. Successful mount/read is frontend readiness.
 Load this frontend then independent `efivar_store.ko` using `partuuid=<unique

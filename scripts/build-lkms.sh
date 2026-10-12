@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
-# Exact prepared ACK/DDK inputs; never synthesize CRCs or an admitted receipt.
+# Exact prepared ACK/DDK inputs; never synthesize CRCs or skip exact admission.
 set -eu
 if [ "$#" -ne 6 ]; then
     echo "usage: $0 branch generation aarch64|x86_64 source output artifact-dir" >&2
@@ -32,7 +32,7 @@ for module in dm-thin-pool part-projection efivarfs efivar_store; do
     python3 "$root/scripts/kmi_modules.py" build --module-dir "$directory" --module "$module" \
         --branch "$branch" --generation "$generation" --arch "$arch" \
         --kmi-src "$source" --kmi-out "$output" --jobs "${JOBS:-4}"
-    cp "$directory/$module.ko" "$directory/$module.ko.compat.json" "$destination/"
+    cp "$directory/$module.ko" "$directory/$module.ko.build.json" "$destination/"
     # Verify the exact shipped bytes after copying; no stripping after admission.
     python3 "$root/scripts/kmi_modules.py" verify --branch "$branch" --generation "$generation" \
         --arch "$arch" --kmi-out "$output" --module "$destination/$module.ko"

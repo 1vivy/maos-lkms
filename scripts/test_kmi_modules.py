@@ -1,5 +1,4 @@
 """Synthetic ELF admission contracts; no compiler or checked-in binaries."""
-import json
 import contextlib
 import io
 import subprocess
@@ -77,7 +76,7 @@ class KmiModuleCompatibility(unittest.TestCase):
 
     def verify(self, data):
         self.module.write_bytes(data)
-        return compat.verify_module(self.module, "gpt", self.output)
+        return compat.verify_module(self.module, "gpt", self.output)["imports"]
 
     def test_nonversioned_import_in_system_map_accepted(self):
         self.assertEqual(self.verify(module_file()), {"versioned": 2, "kallsyms": ["private"]})
@@ -149,16 +148,46 @@ class KmiModuleCompatibility(unittest.TestCase):
             with self.subTest(reason=reason), self.assertRaisesRegex(compat.CompatibilityError, reason):
                 self.verify(data)
 
-    def test_receipt_binds_inputs_and_module(self):
-        imports = self.verify(module_file())
+    def test_build_info_records_release_facts_without_host_paths(self):
+        """Release output beside the artifact: basename keys, no absolute path, nothing reads it back."""
         identity = {"branch": "android16-6.12", "generation": 6}
-        receipt = compat.provenance(self.output, self.module, identity, imports)
-        self.assertEqual(set(receipt), {"schema_version", "kmi", "kmi_out_inputs", "module_sha256", "imports"})
-        compat.receipt_path(self.module).write_text(json.dumps(receipt))
-        self.assertEqual(len(compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64")), 1)
-        (self.output / "System.map").write_text("0000000000000001 T private\n0000000000000002 T extra\n")
-        with self.assertRaisesRegex(compat.CompatibilityError, "stale or mismatched"):
+        self.module.write_bytes(module_file())
+        facts = compat.verify_module(self.module, "gpt", self.output, "aarch64")
+        info = compat.build_info(self.output, self.module, identity, facts, "0" * 40)
+        self.assertEqual(set(info), {"schema_version", "kmi", "kmi_out_inputs", "module_sha256", "imports", "modinfo", "source_revision"})
+        self.assertEqual(info["kmi_out_inputs"], {
+            "Module.symvers": compat.digest(self.output / "Module.symvers"),
+            "System.map": compat.digest(self.output / "System.map"),
+            "utsrelease.h": compat.digest(self.output / "include/generated/utsrelease.h")})
+        self.assertEqual(info["module_sha256"], compat.digest(self.module))
+        self.assertEqual(info["imports"], {"versioned": 2, "kallsyms": ["private"]})
+        self.assertEqual(info["modinfo"], {"name": "gpt", "vermagic": VERMAGIC})
+        self.assertEqual(info["source_revision"], "0" * 40)
+        unpinned = compat.build_info(self.output, self.module, identity, facts, None)
+        self.assertEqual(set(unpinned), set(info) - {"source_revision"})
+        self.assertEqual(compat.build_info_path(self.module).name, "gpt.ko.build.json")
+
+    def test_verify_payload_admits_modules_and_writes_nothing(self):
+        """The standalone check works from the module plus --kmi-out alone."""
+        self.module.write_bytes(module_file())
+        report = {"module": "gpt", "kmi": {"branch": "android16-6.12", "generation": 6},
+                  "imports": {"versioned": 2, "kallsyms": ["private"]}}
+        self.assertEqual(compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64"), [report])
+        self.assertEqual(sorted(entry.name for entry in self.root.iterdir()), ["gpt.ko", "out"])
+        with self.assertRaisesRegex(compat.CompatibilityError, "absent from System.map: private"):
+            (self.output / "System.map").write_text("0000000000000002 T other\n")
             compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64")
+
+    def test_verify_payload_binds_the_kernel_output_source_identity(self):
+        self.module.write_bytes(module_file())
+        source = self.output / "source"
+        source.mkdir()
+        constants = source / "build.config.constants"
+        constants.write_text("BRANCH=android16-6.12\nKMI_GENERATION=5\n")
+        with self.assertRaisesRegex(compat.CompatibilityError, "source generation mismatch"):
+            compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64")
+        constants.write_text("BRANCH=android16-6.12\nKMI_GENERATION=6\n")
+        self.assertEqual(len(compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64")), 1)
 
     def test_explicit_identity_is_not_generation_six_only(self):
         source = self.root / "source"
@@ -198,14 +227,12 @@ class KmiModuleCompatibility(unittest.TestCase):
         with self.assertRaisesRegex(compat.CompatibilityError, "requested architecture"):
             compat.verify_module(self.module, "dm-thin-pool", self.output, "x86_64")
 
-    def test_receipt_rejects_wrong_explicit_identity(self):
-        imports = self.verify(module_file())
-        identity = {"branch": "android15-6.6", "generation": 9}
-        compat.receipt_path(self.module).write_text(json.dumps(
-            compat.provenance(self.output, self.module, identity, imports)))
-        compat.verify_payload(self.output, [self.module], "android15-6.6", 9, "aarch64")
-        with self.assertRaisesRegex(compat.CompatibilityError, "receipt identity"):
-            compat.verify_payload(self.output, [self.module], "android15-6.6", 8, "aarch64")
+    def test_wrong_explicit_identity_is_refused(self):
+        source = self.root / "source"
+        source.mkdir()
+        (source / "build.config.constants").write_text("BRANCH=android16-6.12\nKMI_GENERATION=6\n")
+        with self.assertRaisesRegex(compat.CompatibilityError, "generation mismatch"):
+            compat.kmi_identity(source, "android16-6.12", 5)
 
     def test_success_exit_with_objtool_diagnostic_is_rejected_and_logged(self):
         log = self.root / "module.build.log"

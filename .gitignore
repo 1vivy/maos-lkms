@@ -8,7 +8,7 @@ AGENTS.md
 .cargo/config.toml
 __pycache__
 /dist
-*.ko.compat.json
+*.ko.build.json
 /.worktrees/
 /kernel/efivarfs/vars-patched.c
 /kernel/efivar_store/.source/

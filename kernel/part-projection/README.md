@@ -83,7 +83,7 @@ There is no privileged unseal shortcut.
 
 ## Build and evidence
 
-Use the root exact-KMI producer and schema-2 receipts. Private DM/configfs imports
+Use the root exact-KMI producer and admit against its complete output. Private DM/configfs imports
 are admitted only against the supplied System.map and require the product's
 compatible prebinding loader or real exports; namespace and exported CRC gates
 remain mandatory. ABI5 passed exact generation-6 admission on aarch64 and x86_64.

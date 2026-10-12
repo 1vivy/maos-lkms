@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Exercise ELF, exact identity and receipt contracts
+      - name: Exercise ELF, exact identity and build-info contracts
         run: python3 -m unittest scripts.test_kmi_modules
   ack:
     if: github.event_name == 'workflow_dispatch' && inputs.lane == 'ack'

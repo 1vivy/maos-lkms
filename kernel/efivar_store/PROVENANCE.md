@@ -3,7 +3,7 @@
 Source: https://github.com/1vivy/efivar-store; the exact commit is recorded in
 `SOURCE_REVISION`. Source is materialized only at that revision in ignored
 `.source`, checked for tracked changes, built with standalone Kbuild, and admitted
-with a schema-2 artifact/KMI receipt.
+against the exact configured kernel output.
 
 The reconciled source is pinned to
 `3cdd1d84f80046c68261ee51fd8e11bb02b58dcc` (`linux: claim the backing device for

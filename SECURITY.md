@@ -7,7 +7,7 @@ These are independent privileged kernel modules, not a root provider or a hostil
 `efivar_store` retains only its backing file opener credentials for narrowly bracketed I/O. It must restore caller credentials on every path, preserve native EFI sysfs ownership, and refuse blank storage without writes. No root-runtime credential provider is involved. A build or permissive VM round-trip does not establish enforcing Android HAL access or safe device deployment.
 
 Report privately through the owner's [Egysk security advisory form](https://github.com/1vivy/egysk/security/advisories/new).
-Include the exact source revision, module hash and receipt, kernel
+Include the exact source revision, module hash and build info, kernel
 source/configuration/KMI, architecture, operation sequence and observed failure.
 Keep reports and exploits private until coordinated disclosure.
 

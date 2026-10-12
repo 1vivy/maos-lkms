@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Build and admit ACK KMI modules (arm64 phones, x86_64 Cuttlefish), with schema-2 input receipts."""
+"""Build and admit ACK KMI modules (arm64 phones, x86_64 Cuttlefish).
+
+Admission runs at build time against the supplied kernel output (`--kmi-out`):
+Module.symvers CRCs, vermagic flags, optional relocation kinds and private
+imports resolved against System.map. Each build additionally writes
+`<module>.ko.build.json` release information beside the artifact. That file is
+descriptive output for release readers: nothing admits, re-checks or packages
+it, and the admission check itself reads no side file.
+"""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -11,7 +19,7 @@ import subprocess
 import sys
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import NamedTuple, TypedDict, cast
+from typing import NamedTuple, NotRequired, TypedDict
 
 PathInput = str | os.PathLike[str]
 SymbolCrcs = dict[str, int]
@@ -34,12 +42,28 @@ class Imports(TypedDict):
     kallsyms: list[str]
 
 
-class Provenance(TypedDict):
+class Modinfo(TypedDict):
+    name: str
+    vermagic: str
+
+
+class ModuleFacts(TypedDict):
+    """What admission observed in one module: the release-relevant ELF facts."""
+
+    imports: Imports
+    modinfo: Modinfo
+
+
+class BuildInfo(TypedDict):
+    """Release information written beside a built module (never an admission input)."""
+
     schema_version: int
     kmi: Kmi
     kmi_out_inputs: dict[str, str]
     module_sha256: str
     imports: Imports
+    modinfo: Modinfo
+    source_revision: NotRequired[str]
 
 
 class ModuleReport(TypedDict):
@@ -202,7 +226,8 @@ def kmi_identity(source: Path, branch: str, generation: int) -> Kmi:
     return {"branch": branch, "generation": generation}
 
 
-def verify_module(path: PathInput, name: str, output: Path, architecture: str | None = None) -> Imports:
+def verify_module(path: PathInput, name: str, output: Path, architecture: str | None = None) -> ModuleFacts:
+    """Admit one built module against the exact kernel output; no side file is read."""
     elf = Elf(path)
     require(elf.kind == 1 and elf.machine in ARCHES, "elf: expected ET_REL aarch64 or x86_64")
     arch, flags = ARCHES[elf.machine]
@@ -226,45 +251,61 @@ def verify_module(path: PathInput, name: str, output: Path, architecture: str | 
     vermagic = [entry[9:].decode("ascii") for entry in modinfo if entry.startswith(b"vermagic=")]
     tokens = vermagic[0].split() if len(vermagic) == 1 else []
     require(len(tokens) == 1 + len(flags.split()) and tokens[1:] == flags.split(), "vermagic: expected release followed by " + flags)
-    require([entry[5:].decode("ascii") for entry in modinfo if entry.startswith(b"name=")] == [name.replace("-", "_")], "modinfo: module name mismatch")
-    return {"versioned": len(versions), "kallsyms": sorted(kallsyms)}
+    names = [entry[5:].decode("ascii") for entry in modinfo if entry.startswith(b"name=")]
+    require(names == [name.replace("-", "_")], "modinfo: module name mismatch")
+    return {"imports": {"versioned": len(versions), "kallsyms": sorted(kallsyms)},
+            "modinfo": {"name": names[0], "vermagic": vermagic[0]}}
 
 
-def receipt_path(module: PathInput) -> Path:
-    return Path(str(module) + ".compat.json")
+def build_info_path(module: PathInput) -> Path:
+    return Path(str(module) + ".build.json")
 
 
-def provenance(output: Path, module: PathInput, identity: Kmi, imports: Imports) -> Provenance:
-    result: Provenance = {"schema_version": 2, "kmi": identity,
-                         "kmi_out_inputs": {str(output / name): digest(output / name) for name in INPUTS},
-                         "module_sha256": digest(module), "imports": imports}
+def build_info(output: Path, module: PathInput, identity: Kmi, facts: ModuleFacts,
+               revision: str | None) -> BuildInfo:
+    """Release information for the artifact. Input hashes are keyed by basename, not host path."""
+    result: BuildInfo = {"schema_version": 1, "kmi": identity,
+                         "kmi_out_inputs": {Path(name).name: digest(output / name) for name in INPUTS},
+                         "module_sha256": digest(module), "imports": facts["imports"],
+                         "modinfo": facts["modinfo"]}
+    if revision is not None:
+        result["source_revision"] = revision
     return result
 
 
 def verify_payload(output: PathInput, modules: Sequence[PathInput], branch: str,
                    generation: int, architecture: str) -> list[ModuleReport]:
+    """Admit already-built modules against the exact kernel output; nothing is read or written."""
     output = Path(output).resolve(strict=True)
     require(re.fullmatch(r"android\d+-\d+\.\d+", branch) and generation >= 0,
             "kmi: exact branch and generation required")
+    identity: Kmi = {"branch": branch, "generation": generation}
     reports: list[ModuleReport] = []
     for module in modules:
         name = Path(module).stem
-        imports = verify_module(module, name, output, architecture)
-        receipt = cast(Provenance, json.loads(receipt_path(module).read_text()))
-        identity = cast(Kmi, receipt.get("kmi"))
-        require(identity == {"branch": branch, "generation": generation}, "kmi: receipt identity mismatch")
+        facts = verify_module(module, name, output, architecture)
         source = output / "source"
-        if any((source / name).is_file() for name in IDENTITY_FILES):
-            require(identity == kmi_identity(source, branch, generation), "kmi: receipt/source identity mismatch")
-        require(receipt == provenance(output, module, identity, imports), f"provenance: stale or mismatched build receipt for {name}")
-        reports.append({"module": name, "kmi": identity, "imports": imports})
+        if any((source / identity_file).is_file() for identity_file in IDENTITY_FILES):
+            # The output's own source tree must claim the identity being admitted.
+            _ = kmi_identity(source, branch, generation)
+        reports.append({"module": name, "kmi": identity, "imports": facts["imports"]})
     return reports
+
+
+def source_revision(directory: Path) -> str | None:
+    """The revision a module directory pins, or None when it pins none."""
+    pin = directory / "SOURCE_REVISION"
+    if not pin.is_file():
+        return None
+    revision = pin.read_text().strip()
+    require(re.fullmatch(r"[0-9a-f]{40}", revision), "efvs: invalid source revision")
+    return revision
 
 
 def efvs_source(directory: Path) -> Path:
     """Build only the recorded revision, not an arbitrary checkout or working tree."""
-    revision = (directory / "SOURCE_REVISION").read_text().strip()
-    require(re.fullmatch(r"[0-9a-f]{40}", revision), "efvs: invalid source revision")
+    revision = source_revision(directory)
+    require(revision is not None, "efvs: missing SOURCE_REVISION")
     checkout = directory / ".source"
     if not checkout.exists():
         repository = os.environ.get("EFIVAR_STORE_REPO", "https://github.com/1vivy/efivar-store.git")
@@ -318,9 +359,10 @@ def build(args: argparse.Namespace) -> ModuleReport:
     directory = Path(args.module_dir).resolve(strict=True)
     require((directory / "Kbuild").is_file(), "build: module directory has no standalone Kbuild")
     module = directory / (name + ".ko")
-    receipt_path(module).unlink(missing_ok=True)
+    build_info_path(module).unlink(missing_ok=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith(("CONFIG_", "KBUILD_")) and key not in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "KCFLAGS", "KCPPFLAGS", "CFLAGS_MODULE", "LDFLAGS_MODULE")}
-    if (directory / "SOURCE_REVISION").is_file():
+    revision = source_revision(directory)
+    if revision is not None:
         _ = efvs_source(directory)
     arch = kernel_arch(output)
     require(arch == {"aarch64": "arm64", "x86_64": "x86_64"}[args.arch],
@@ -329,9 +371,9 @@ def build(args: argparse.Namespace) -> ModuleReport:
     log = directory / (name + ".build.log")
     run_kbuild(command + ["clean"], env, log)
     run_kbuild(command + ["modules", f"-j{args.jobs}"], env, log, append=True)
-    imports = verify_module(module, name, output, args.arch)
-    receipt_path(module).write_text(json.dumps(provenance(output, module, identity, imports), indent=2, sort_keys=True) + "\n")
-    return {"module": name, "kmi": identity, "imports": imports}
+    facts = verify_module(module, name, output, args.arch)
+    build_info_path(module).write_text(json.dumps(build_info(output, module, identity, facts, revision), indent=2, sort_keys=True) + "\n")
+    return {"module": name, "kmi": identity, "imports": facts["imports"]}
 
 
 def main(argv: Sequence[str] | None = None) -> int:

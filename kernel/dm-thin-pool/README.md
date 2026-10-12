@@ -74,8 +74,9 @@ make -C kernel/dm-thin-pool KMI_SRC=/path/to/kernel KMI_OUT=/path/to/out KMI_BRA
 - `KBUILD_MODPOST_WARN=1` allows non-KMI imports, but admission requires them
   in `System.map`. Every version CRC (including `module_layout`) must match
   `Module.symvers`; vermagic flags, not its release token, are enforced.
-- Keep the generated `dm-thin-pool.ko.compat.json` beside `dm-thin-pool.ko` when copying it to a
-  payload. The assembler checks the receipt and module again before packaging.
+- Ship `dm-thin-pool.ko` alone in a payload. The `<module>.ko.build.json` written
+  beside it is release information for readers of the artifact directory; nothing
+  verifies or packages it.
 
 ## Layout
 
@@ -111,10 +112,10 @@ metadata recovery).
 
 `just gate <branch> <generation> <aarch64|x86_64> <source> <complete-output>
 <artifact-dir>` builds all four independent projects plus the pinned store's
-standalone source Kbuild. It copies artifacts and schema-2 receipts to
-`<artifact-dir>/<branch>-<generation>/<arch>/` and verifies the copied bytes.
+standalone source Kbuild. It copies each module and its build info to
+`<artifact-dir>/<branch>-<generation>/<arch>/` and re-admits the copied bytes.
 No stripping or mutation follows admission. `just host-contract` exercises the
-ELF/identity/receipt tests; neither recipe builds legacy init or daemon products.
+ELF/identity/build-info tests; neither recipe builds legacy init or daemon products.
 
 CI push/PR runs the host contracts. Manual build dispatch requires explicit
 branch, generation, source and both architecture output paths. The ACK lane uses
