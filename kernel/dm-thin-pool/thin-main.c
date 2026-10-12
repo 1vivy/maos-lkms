@@ -3,7 +3,7 @@
  * dm-thin-pool.ko entry point (internal dm_thin_pool).
  *
  * Brings up the vendored dm-thin family and exposes the read-only readiness
- * parameter used by the esu PID1 self-check:
+ * parameter used by the maos PID 1 self-check:
  *   ready       "Y" only after every subsystem and both device-mapper targets
  *               initialized, and "N" again as soon as unload teardown starts.
  *
@@ -86,6 +86,6 @@ static void __exit thinpool_private_exit(void)
 module_init(thinpool_private_init);
 module_exit(thinpool_private_exit);
 
-MODULE_DESCRIPTION("esu thin provisioning targets (thin-pool, thin)");
-MODULE_AUTHOR("esu");
+MODULE_DESCRIPTION("maos thin provisioning targets (thin-pool, thin)");
+MODULE_AUTHOR("maos");
 MODULE_LICENSE("GPL v2");

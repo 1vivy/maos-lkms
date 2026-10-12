@@ -15,7 +15,7 @@ historical verification only; they are retained as provenance, not current ABI
 instructions or evidence for ABI5.
 
 `gpt.c`, `gpt_uapi.h`, `Makefile` and the module documentation are newly authored
-for esu's single in-memory GPT projection contract. This is not a fork of a
+for maos's single in-memory GPT projection contract. This is not a fork of a
 GPT rewriting module or a physical block-I/O firewall. All files in this subtree
 are GPL-2.0-only; `LICENSE` supplies the full GPL v2 text and fixes the license to
 version 2 only.

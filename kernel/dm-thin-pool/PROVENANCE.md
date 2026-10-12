@@ -3,7 +3,7 @@
 This subtree is a **separate GPL-2.0-only kernel module** (`thin.ko`) vendored
 from the Linux kernel device-mapper thin-provisioning family and forked so it
 can be loaded as one out-of-tree module against the phone's exported KMI. It is
-aggregated with, never linked into, the GPL-3.0 esu core: the repository's
+aggregated with, never linked into, the GPL-3.0 maos core: the repository's
 top-level `LICENSE` (GPL-3.0) does not cover this subtree.
 
 The historical throwaway proof workspace contained the source bundle, fork patch,
@@ -43,7 +43,7 @@ The vendored `.c`/`.h` implementation and private rename header were copied from
 the historical proof bundle and verified against the SHA-256 list below:
 
 - `thin-main.c` — the module entry point. Provenance note: it is the imported
-  `bundle/bundle-main.c` with the esu changes of section 4; the proven file
+  `bundle/bundle-main.c` with the maos changes of section 4; the proven file
   as it existed at import time is patch hunk 1 of
   `patches/0001-fork-dm-thin-for-exported-KMI-surface.patch`.
 - `private-rename.h` — the private symbol rename header.
@@ -57,10 +57,10 @@ deliberately excluded: `*.o`, `.*.o.cmd`, `*.ko`, `*.mod.c`, `*.mod`,
 
 SHA-256 of the current source set (the vendored implementation set and
 `private-rename.h` remain unchanged from the proven bundle; `thin-main.c`
-includes the esu integration changes in section 4):
+includes the maos integration changes in section 4):
 
 ```
-bff084b0802ce915c05fd875a24006463ff63f6bae7aee97c03ba69867fd923e  thin-main.c
+3cb797bc4f4510ae71b7c37a5bfd198d7899cb9b465a777f5c83157886dc7178  thin-main.c
 83f7a2a3ee295c5d0c18e0cabb9d0900c14cde6ff7e3dc68b17897833835cf45  private-rename.h
 d994221868e2f441e88888e377a7aba5836aba126d14ea82a734459095535275  src/dm-bio-prison-v1.c
 5cef7b5b636614a691d3782892977265a95f2b9090566e991a182cbebaac61f9  src/dm-bio-prison-v2.c
@@ -137,7 +137,7 @@ against the proof layout rather than applying onto this subtree as a plain
 151 unique undefined imports and a **PASS** on the forbidden-import list, i.e.
 none of the removed module-internal symbols remains an undefined symbol.
 
-## 4. Changes made when importing into esu
+## 4. Changes made when importing into maos
 
 Only the build and metadata surface changed; the vendored `.c`/`.h` files and
 `private-rename.h` are byte-identical to the proven bundle.
@@ -145,14 +145,16 @@ Only the build and metadata surface changed; the vendored `.c`/`.h` files and
 - `bundle-main.c` → `thin-main.c`, and the Makefile's `obj-m` changed from
   `thinpool-private.o` to `thin.o`, so the module file is `thin.ko` and loads as
   `thin`. The ESP manifest `modules[].name` must therefore be `thin`.
-- `MODULE_DESCRIPTION` is now `esu thin provisioning targets (thin-pool, thin)`
-  and `MODULE_AUTHOR` is `esu` (the proven values were
-  `Private thin provisioning target bundle` / `thinpool-proof`).
+- `MODULE_DESCRIPTION` is now `maos thin provisioning targets (thin-pool, thin)`
+  and `MODULE_AUTHOR` is `maos` (the proven values were
+  `Private thin provisioning target bundle` / `thinpool-proof`). Both strings
+  take effect at the next module build; the currently deployed `.ko` binaries
+  were built from the previous source.
 - `MODULE_LICENSE` is `GPL v2` (the proven value was `GPL`): the vendored files
   are `GPL-2.0-only`, and the GPL-3.0 core must not cover this subtree. The
   vendored files keep their upstream `MODULE_LICENSE("GPL")` boilerplate exactly
   as in the proven bundle, so a linked `thin.ko` carries several `.modinfo`
-  license strings; all of them are GPL-2-compatible, and the esu boundary
+  license strings; all of them are GPL-2-compatible, and the maos boundary
   declaration is `thin-main.c`'s `GPL v2`.
 - `thin-main.c` exposes the read-only `ready` parameter
   (`Y` only after all subsystems and both targets initialized, `N` again

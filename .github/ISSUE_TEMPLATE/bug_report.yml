@@ -1,5 +1,5 @@
 name: Bug report
-description: Create a report to help us improve esu
+description: Create a report to help us improve maos-lkms
 labels: [Bug]
 
 body:
@@ -57,7 +57,7 @@ body:
         value: |
           - Device:
           - OS Version:
-          - esu Version:
+          - maos-lkms Version:
           - Kernel Version:
     validations:
         required: true

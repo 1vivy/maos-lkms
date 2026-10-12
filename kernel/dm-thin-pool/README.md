@@ -17,10 +17,13 @@ headers of every vendored file.
 | --- | --- |
 | Module file | `dm-thin-pool.ko`, built in this directory |
 | Module name | `dm_thin_pool` (Kbuild normalizes hyphens) |
-| Description | `esu thin provisioning targets (thin-pool, thin)` |
-| Author | `esu` |
+| Description | `maos thin provisioning targets (thin-pool, thin)` |
+| Author | `maos` |
 | License | `GPL v2` in `thin-main.c`; the vendored files keep their upstream `MODULE_LICENSE("GPL")` boilerplate, all GPL-2-compatible (see `PROVENANCE.md`) |
 | Device-mapper targets | `thin-pool` (v1.23.0) and `thin` (v1.23.0), names unchanged from the proven build |
+
+The `Description` and `Author` strings above take effect at the next module
+build; the currently deployed `.ko` binaries were built from the previous source.
 
 The proven private symbol names (`thinpool_private_*`, applied by
 `private-rename.h`) are retained, so the module neither defines nor overrides
