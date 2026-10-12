@@ -6,8 +6,10 @@ Source: https://github.com/1vivy/efivar-store; the exact commit is recorded in
 with a schema-2 artifact/KMI receipt.
 
 The reconciled source is pinned to
-`e004cdac8d1199e19a9fcd34b1ed59fb5448c5d1` (`linux: Use kernel-supported x86 call
-relocations`), including the credential and DKMS cutovers at `931bb20` / `6182ed1`.
+`3cdd1d84f80046c68261ee51fd8e11bb02b58dcc` (`linux: claim the backing device for
+the backend lifetime`), retaining the credential, DKMS and x86 call-relocation
+cutovers. It holds an exclusive block claim until callback removal and final
+`fput`, so live EFI storage is not treated as an unowned raw partition.
 It removes the provider ABI and includes the configured freestanding runtime,
 sysfs UUID discovery and native EFI ownership.
 The commit currently exists in the isolated source clone; publication is a
