@@ -10,6 +10,13 @@
 #include <linux/highmem.h>
 #include <linux/blk-crypto.h>
 struct pp_range { struct dm_dev *dev; sector_t offset; bool ro; };
+/* DM fans out empty WRITE|PREFLUSH bios, not request-level REQ_OP_FLUSH.
+ * A data-bearing write must never bypass a range's read-only protection. */
+static bool empty_flush(const struct bio *bio)
+{
+ return bio_op(bio) == REQ_OP_WRITE && (bio->bi_opf & REQ_PREFLUSH) &&
+  !bio->bi_iter.bi_size;
+}
 static int range_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
  struct pp_range *r;
@@ -40,7 +47,7 @@ static void range_dtr(struct dm_target *ti)
 static int range_map(struct dm_target *ti, struct bio *bio)
 {
  struct pp_range *r = ti->private;
- if (r->ro && bio_op(bio) != REQ_OP_READ && bio_op(bio) != REQ_OP_FLUSH)
+ if (r->ro && bio_op(bio) != REQ_OP_READ && !empty_flush(bio))
   return DM_MAPIO_KILL;
  bio_set_dev(bio, r->dev->bdev);
  bio->bi_iter.bi_sector = r->offset + dm_target_offset(ti, bio->bi_iter.bi_sector);
@@ -89,7 +96,7 @@ static int meta_map(struct dm_target *ti,struct bio *bio)
  struct bio_vec bv;
  struct bvec_iter iter;
  size_t offset=dm_target_offset(ti,bio->bi_iter.bi_sector) << SECTOR_SHIFT;
- if (bio_op(bio)==REQ_OP_FLUSH) { bio_endio(bio); return DM_MAPIO_SUBMITTED; }
+ if (empty_flush(bio)) { bio_endio(bio); return DM_MAPIO_SUBMITTED; }
  if (bio_op(bio)!=REQ_OP_READ || bio_has_crypt_ctx(bio) ||
      offset + bio->bi_iter.bi_size > (ti->len << SECTOR_SHIFT))
   return DM_MAPIO_KILL;
@@ -104,7 +111,7 @@ static int meta_map(struct dm_target *ti,struct bio *bio)
 }
 static int hole_map(struct dm_target *ti,struct bio *bio)
 {
- if (bio_op(bio)==REQ_OP_FLUSH) { bio_endio(bio); return DM_MAPIO_SUBMITTED; }
+ if (empty_flush(bio)) { bio_endio(bio); return DM_MAPIO_SUBMITTED; }
  return DM_MAPIO_KILL;
 }
 static int hole_ctr(struct dm_target *ti,unsigned int argc,char **argv)

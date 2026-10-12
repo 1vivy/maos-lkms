@@ -35,6 +35,12 @@ freezes generation and geometry until reset. Metadata target boundaries must be
 logical-block aligned; metadata io_hints preserve the staged logical geometry.
 `pp-hole` takes no parameters and rejects access except flush.
 
+DM flush fan-out reaches these targets as empty `REQ_OP_WRITE | REQ_PREFLUSH`
+bios, not request-level `REQ_OP_FLUSH`. Metadata and holes complete only those
+empty flushes locally; ranges forward them to their real backing and preserve
+its completion status. A data-bearing write, including one carrying PREFLUSH,
+must still be rejected by metadata, holes and read-only ranges.
+
 ## Publication, reload and teardown
 
 `commit` accepts `1` or `seal`. It checks the actual composite queue logical
@@ -74,3 +80,9 @@ and reached `sys.boot_completed=1` in permissive mode
 (`20261010T232708Z-egysk-cutover`). Anchored multi-LUN sealing, reload and busy
 teardown/reset still require device qualification; host geometry tests do not
 establish those lifecycle properties.
+
+The flush correction passed both exact-KMI producer lanes and the 15 host
+admission tests. ROM2 capture `20261011T234852Z-900e-2` progressed from the prior
+metadata-key fsync failure to `dm-default-key` construction. It then hit the
+separate mixed-backing crypto-capability failure; this is not completed
+encrypted-ROM2 boot proof.
