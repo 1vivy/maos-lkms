@@ -1,20 +1,20 @@
 # EFVS backend provenance and build
 
-Source: https://github.com/1vivy/efivar-store; the exact commit is recorded in
-`SOURCE_REVISION`. Source is materialized only at that revision in ignored
-`.source`, checked for tracked changes, built with standalone Kbuild, and admitted
-against the exact configured kernel output.
+Source: https://github.com/1vivy/efivar-store.
+`SOURCE_REVISION` records the exact commit.
+The build materializes that revision in the ignored `.source` directory.
+It checks tracked changes before standalone Kbuild compiles the module.
+The build checks the module against the configured kernel output.
 
-The reconciled source is pinned to
-`3cdd1d84f80046c68261ee51fd8e11bb02b58dcc` (`linux: claim the backing device for
-the backend lifetime`), retaining the credential, DKMS and x86 call-relocation
-cutovers. It holds an exclusive block claim until callback removal and final
-`fput`, so live EFI storage is not treated as an unowned raw partition.
-It removes the provider ABI and includes the configured freestanding runtime,
-sysfs UUID discovery and native EFI ownership.
-The commit currently exists in the isolated source clone; publication is a
-separate owner-controlled operation. `EFIVAR_STORE_REPO` may supply that local
-clone for integration, but never changes the recorded revision.
+The source pin is `483dc8b0b8bdc797fe79e0052ff2a161f70813ad`.
+ODP uses the same revision for its firmware store.
+This revision retains the exclusive block claim, credential handling, DKMS support, and x86 relocation changes.
+The backend holds the block claim until it removes callbacks and releases the file.
+It uses native EFI ownership, sysfs UUID discovery, and the configured freestanding runtime.
+
+`EFIVAR_STORE_REPO` can select a local clone.
+It does not change the recorded revision.
+See the ODP [EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared pin and comparison procedure.
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
