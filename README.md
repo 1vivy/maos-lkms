@@ -15,40 +15,55 @@ Each directory has its own Kbuild/Makefile and provenance. Shared code is limite
 
 ## Build and admit exact artifacts
 
-Supply the complete matching ACK source/output, not merely kernel headers. The output must contain `.config`, `Module.symvers`, `System.map` and `include/generated/utsrelease.h`. Supply the matching LLVM toolchain through PATH. Supported architecture names are `aarch64` and `x86_64`.
+Supply the complete matching ACK source and output. Kernel headers alone are not sufficient.
 
-Both real-build lanes run on the prepared self-hosted `egysk-kmi` runner; a hosted empty runner cannot provide caller-owned complete outputs. The DDK container lane binds each caller-supplied absolute path (`kmi_src`, `aarch64_out`, `x86_64_out`) into the job container at the identical path; nothing is copied or synthesized inside the image, and an unbound path is simply absent there. ddk-min exports an arm64 `CROSS_COMPILE`, which kbuild turns into a `--target=` that contradicts the x86_64 leg, so the workflow unsets it and lets kbuild derive the target from `ARCH`. The pinned `nightly-2026-08-08` toolchain with `rust-src` must be installed inside that container; the build fails closed without it.
+The build needs these inputs:
+
+1. A prepared ACK source tree. It must contain a readable `Makefile`.
+2. The complete matching kernel output tree. It must contain `.config`, `Module.symvers`, `System.map` and `include/generated/utsrelease.h`.
+3. The matching LLVM toolchain, through `PATH`.
+4. The pinned `nightly-2026-08-08` Rust toolchain with `rust-src`, for the freestanding store engine.
+
+Supported architecture names are `aarch64` and `x86_64`. When an input is absent or incomplete, the script exits with status 2 and names the missing input. It does not synthesize CRCs and does not skip exact admission.
+
+Both real-build lanes run on the prepared self-hosted `egysk-kmi` runner. A hosted empty runner cannot provide caller-owned complete outputs. The DDK container lane binds each caller-supplied absolute path (`kmi_src`, `aarch64_out`, `x86_64_out`) into the job container at the identical path. Nothing is copied or synthesized inside the image, and an unbound path is absent there. ddk-min exports an arm64 `CROSS_COMPILE`, and kbuild turns that value into a `--target=` that contradicts the x86_64 leg. The workflow unsets it and lets kbuild derive the target from `ARCH`.
 
 ```sh
 python3 -m unittest scripts.test_kmi_modules
 sh scripts/build-lkms.sh android16-6.12 6 aarch64 \
-    /path/to/source /path/to/complete-output /path/to/artifacts
+    /path/to/source /path/to/complete-output
 ```
 
-The gate builds all four projects, admits the exact copied bytes against the supplied kernel output and writes:
+The gate builds all four projects and the pinned standalone source Kbuild. It then admits the exact shipped bytes against the supplied kernel output. All module output stays in the ignored `out/` tree:
 
 ```text
-artifacts/<branch>-<generation>/<arch>/
-  dm-thin-pool.ko
-  dm-thin-pool.ko.build.json
-  part-projection.ko
-  part-projection.ko.build.json
-  efivarfs.ko
-  efivarfs.ko.build.json
+out/modules/<branch>-<generation>/<arch>/
+  dm-thin-pool/dm-thin-pool.ko
+  dm-thin-pool/dm-thin-pool.ko.build.json
+  part-projection/part-projection.ko
+  part-projection/part-projection.ko.build.json
+  efivarfs/efivarfs.ko
+  efivarfs/efivarfs.ko.build.json
+  efivar_store/efivar_store.ko
+  efivar_store/efivar_store.ko.build.json
+out/standalone/<branch>-<generation>/<arch>/efivar_store/
   efivar_store.ko
   efivar_store.ko.build.json
 ```
 
-For one project:
+Each run replaces its own `out/` subtrees. No module artifact is written into a source directory and no artifact is copied from one.
+
+For one project, pass an output directory. Without `--output-dir`, the module file stays in the module directory:
 
 ```sh
 python3 scripts/kmi_modules.py build \
     --module-dir kernel/part-projection --module part-projection \
     --branch android16-6.12 --generation 6 --arch aarch64 \
-    --kmi-src /path/to/source --kmi-out /path/to/complete-output
+    --kmi-src /path/to/source --kmi-out /path/to/complete-output \
+    --output-dir out/modules/android16-6.12-6/aarch64/part-projection
 ```
 
-Admission checks ELF type/architecture, normalized internal module name, vermagic flags, exported CRCs and private imports against the supplied kernel map. It runs at build time from the module plus `--kmi-out` alone and persists nothing; `just verify` and `scripts/build-lkms.sh` re-run it on the exact copied bytes. Each build also writes `<module>.ko.build.json` beside the artifact: the KMI branch/generation, the pinned source revision, the module hash, the kernel-input hashes (`Module.symvers`, `System.map`, `utsrelease.h`) keyed by basename, the private imports the loader must resolve and the `.modinfo` name/vermagic. That file is descriptive release output only — no consumer reads or re-checks it, and it is never packaged into a payload or seed. Private vmlinux imports require a compatible loader or suitable exports; successful compilation alone is not a loading guarantee. Never strip or rewrite admitted bytes afterward. A different layout, CFI scheme, signature policy or KMI cannot be repaired by symbol lookup.
+Admission checks ELF type/architecture, normalized internal module name, vermagic flags, exported CRCs and private imports against the supplied kernel map. It runs at build time from the module plus `--kmi-out` alone and persists nothing. `just verify` and `scripts/build-lkms.sh` re-run it on the exact shipped bytes. Each build also writes `<module>.ko.build.json` beside the artifact: the KMI branch/generation, the pinned source revision, the module hash, the kernel-input hashes (`Module.symvers`, `System.map`, `utsrelease.h`) keyed by basename, the private imports the loader must resolve and the `.modinfo` name/vermagic. That file is descriptive release output only — no consumer reads or re-checks it, and it is never packaged into a payload or seed. Private vmlinux imports require a compatible loader or suitable exports; successful compilation alone is not a loading guarantee. Never strip or rewrite admitted bytes afterward. A different layout, CFI scheme, signature policy or KMI cannot be repaired by symbol lookup.
 
 `efivar_store` materializes exactly [`SOURCE_REVISION`](kernel/efivar_store/SOURCE_REVISION). `EFIVAR_STORE_REPO` may select a local repository containing that same commit; it does not change the pin. Its freestanding engine uses pinned `nightly-2026-08-08` with rust-src and locked dependencies; `CONFIG_RUST` is not required. The upstream source also ships standalone `linux/Kbuild` and non-autoloading `dkms.conf`; private imports still need exports or caller-owned prebinding.
 

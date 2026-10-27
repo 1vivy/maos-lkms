@@ -40,9 +40,9 @@ jobs:
           KMI_SRC: ${{ inputs.kmi_src }}
           KMI_OUT: ${{ matrix.arch == 'aarch64' && inputs.aarch64_out || inputs.x86_64_out }}
           KMI_ARCH: ${{ matrix.arch }}
-        run: sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT" "$GITHUB_WORKSPACE/release"
+        run: sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT"
       - uses: actions/upload-artifact@v7
         with:
           name: maos-lkms-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}
-          path: release/
+          path: out/
           if-no-files-found: error

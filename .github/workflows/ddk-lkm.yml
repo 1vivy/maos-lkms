@@ -64,9 +64,9 @@ jobs:
           set -eu
           # ddk-min's arm64 prefix overrides ARCH-derived clang targets.
           unset CROSS_COMPILE
-          sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT" "$GITHUB_WORKSPACE/release"
+          sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT"
       - uses: actions/upload-artifact@v7
         with:
           name: maos-lkms-ddk-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}
-          path: release/
+          path: out/
           if-no-files-found: error

@@ -22,10 +22,14 @@ export KMI_SRC=/path/to/android16-6.12/source
 export KMI_OUT=/path/to/matching/gki-out
 # Local integration before publication of the pin:
 export EFIVAR_STORE_REPO=/path/to/efivar-store
-make -C kernel/efivar_store JOBS=4 KMI_BRANCH=android16-6.12 KMI_GENERATION=6 KMI_ARCH=aarch64
+python3 scripts/kmi_modules.py build \
+  --module-dir kernel/efivar_store --module efivar_store \
+  --branch android16-6.12 --generation 6 --arch aarch64 \
+  --kmi-src "$KMI_SRC" --kmi-out "$KMI_OUT" \
+  --output-dir out/modules/android16-6.12-6/aarch64/efivar_store
 python3 scripts/kmi_modules.py verify --kmi-out "$KMI_OUT" \
   --branch android16-6.12 --generation 6 --arch aarch64 \
-  --module kernel/efivar_store/efivar_store.ko
+  --module out/modules/android16-6.12-6/aarch64/efivar_store/efivar_store.ko
 ```
 
 ## Design

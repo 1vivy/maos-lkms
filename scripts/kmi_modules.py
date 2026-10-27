@@ -358,7 +358,9 @@ def build(args: argparse.Namespace) -> ModuleReport:
     require(re.fullmatch(r"[A-Za-z0-9_-]+", name), "build: invalid module artifact name")
     directory = Path(args.module_dir).resolve(strict=True)
     require((directory / "Kbuild").is_file(), "build: module directory has no standalone Kbuild")
-    module = directory / (name + ".ko")
+    module_output = Path(args.output_dir).resolve() if args.output_dir else directory
+    module_output.mkdir(parents=True, exist_ok=True)
+    module = module_output / (name + ".ko")
     build_info_path(module).unlink(missing_ok=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith(("CONFIG_", "KBUILD_")) and key not in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "KCFLAGS", "KCPPFLAGS", "CFLAGS_MODULE", "LDFLAGS_MODULE")}
     revision = source_revision(directory)
@@ -368,7 +370,9 @@ def build(args: argparse.Namespace) -> ModuleReport:
     require(arch == {"aarch64": "arm64", "x86_64": "x86_64"}[args.arch],
             "build: KMI output architecture mismatch or missing .config")
     command = ["make", "-C", str(source), "O=" + str(output), "M=" + str(directory), "ARCH=" + str(arch), "LLVM=1", "KBUILD_GENDWARFKSYMS_STABLE=1", "KBUILD_MODPOST_WARN=1"]
-    log = directory / (name + ".build.log")
+    if args.output_dir:
+        command.append("MO=" + str(module_output))
+    log = module_output / (name + ".build.log")
     run_kbuild(command + ["clean"], env, log)
     run_kbuild(command + ["modules", f"-j{args.jobs}"], env, log, append=True)
     facts = verify_module(module, name, output, args.arch)
@@ -383,6 +387,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--kmi-out", default=os.environ.get("KMI_OUT"), required=not os.environ.get("KMI_OUT"))
     parser.add_argument("--module", action="append", required=True)
     parser.add_argument("--module-dir")
+    parser.add_argument("--output-dir")
     parser.add_argument("--branch", required=True)
     parser.add_argument("--generation", type=int, required=True)
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)

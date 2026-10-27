@@ -110,12 +110,14 @@ metadata recovery).
 
 ## Product build gates
 
-`just gate <branch> <generation> <aarch64|x86_64> <source> <complete-output>
-<artifact-dir>` builds all four independent projects plus the pinned store's
-standalone source Kbuild. It copies each module and its build info to
-`<artifact-dir>/<branch>-<generation>/<arch>/` and re-admits the copied bytes.
-No stripping or mutation follows admission. `just host-contract` exercises the
-ELF/identity/build-info tests; neither recipe builds legacy init or daemon products.
+`just gate <branch> <generation> <aarch64|x86_64> <source> <complete-output>`
+builds all four independent projects plus the pinned store's standalone source
+Kbuild. Module output stays in the ignored `out/` tree at
+`out/modules/<branch>-<generation>/<arch>/<project>/`, and the standalone
+Kbuild output stays at `out/standalone/<branch>-<generation>/<arch>/efivar_store/`.
+The gate re-admits the exact shipped bytes. No stripping or mutation follows
+admission. `just host-contract` exercises the ELF/identity/build-info tests;
+neither recipe builds legacy init or daemon products.
 
 CI push/PR runs the host contracts. Manual build dispatch requires explicit
 branch, generation, source and both architecture output paths. The ACK lane uses

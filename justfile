@@ -5,9 +5,9 @@ build module branch generation arch kmi_src kmi_out jobs="4":
 verify artifact branch generation arch kmi_out:
     python3 scripts/kmi_modules.py verify --module "{{artifact}}" --branch "{{branch}}" --generation "{{generation}}" --arch "{{arch}}" --kmi-out "{{kmi_out}}"
 
-# Builds all four LKMs and standalone efivar_store; verifies exact copied payloads.
-gate branch generation arch kmi_src kmi_out artifact_dir:
-    sh scripts/build-lkms.sh "{{branch}}" "{{generation}}" "{{arch}}" "{{kmi_src}}" "{{kmi_out}}" "{{artifact_dir}}"
+# Builds all four LKMs and standalone efivar_store; verifies the exact outputs.
+gate branch generation arch kmi_src kmi_out:
+    sh scripts/build-lkms.sh "{{branch}}" "{{generation}}" "{{arch}}" "{{kmi_src}}" "{{kmi_out}}"
 
 host-contract:
     python3 -m unittest scripts.test_kmi_modules
