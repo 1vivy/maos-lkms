@@ -49,9 +49,11 @@ out/modules/<branch>-<generation>/<arch>/
 out/standalone/<branch>-<generation>/<arch>/efivar_store/
   efivar_store.ko
   efivar_store.ko.build.json
+out/linux-cargo/<Rust target>/release/
+  libefivar_store_ffi.a
 ```
 
-Each run replaces its own `out/` subtrees. No module artifact is written into a source directory and no artifact is copied from one.
+Each run replaces its own `out/` subtrees. The gate writes no artifact into a source directory and copies none from one. The store engine archive compiles in `out/linux-cargo/<Rust target>/release/`; `EFVS_CARGO_TARGET_DIR` selects another directory.
 
 For one project, pass an output directory. Without `--output-dir`, the module file stays in the module directory:
 
