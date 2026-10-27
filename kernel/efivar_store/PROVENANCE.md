@@ -3,18 +3,27 @@
 Source: https://github.com/1vivy/efivar-store.
 `SOURCE_REVISION` records the exact commit.
 The build materializes that revision in the ignored `.source` directory.
-It checks tracked changes before standalone Kbuild compiles the module.
+It requires the checked-out HEAD to equal the pin and rejects tracked changes
+before Kbuild compiles the module.
 The build checks the module against the configured kernel output.
 
-The source pin is `483dc8b0b8bdc797fe79e0052ff2a161f70813ad`.
-ODP uses the same revision for its firmware store.
-This revision retains the exclusive block claim, credential handling, DKMS support, and x86 relocation changes.
-The backend holds the block claim until it removes callbacks and releases the file.
-It uses native EFI ownership, sysfs UUID discovery, and the configured freestanding runtime.
+The source pin is `64f6a3133cc0764986dbaf890c8a5958c8cdcb8f`.
+ODP depends on the same revision as a git dependency for its firmware store.
+The pin documents every public item and denies missing docs. It also carries the
+build interface change: `EFVS_ROOT` in `linux/Kbuild` and `EFVS_OUTPUT_DIR` in
+`linux/Makefile` let this repository include the upstream rules instead of a copy.
+The shared format, storage and FFI code is unchanged from
+`483dc8b0b8bdc797fe79e0052ff2a161f70813ad`.
 
 `EFIVAR_STORE_REPO` can select a local clone.
 It does not change the recorded revision.
-See the ODP [EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared pin and comparison procedure.
+The shared format, storage, FFI and CLI code is identical to the previous pin
+`483dc8b0b8bdc797fe79e0052ff2a161f70813ad`; only build files and documentation
+differ. A host check on 2026-10-27 initialized an EFVS image with the CLI at
+`483dc8b`, wrote two variables, then listed and read them with the CLI at
+`64f6a31` on the same file. The second CLI wrote a third variable and deleted
+the second, and the first CLI then listed and read the result. Both directions
+agree. See the ODP [EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared pin.
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -74,9 +83,10 @@ supported without UUID enumeration; the standalone Makefile leaves undefined
 modpost imports fatal.
 The standalone source Kbuild selects arm64 softfloat or x86_64 Rust targets and
 supports configured ACK/GKI/DDK and conventional DKMS packaging; all retain the
-same engine and opener-credential C glue.
+same engine and opener-credential C glue. The product Kbuild in this directory
+sets `EFVS_ROOT` and includes that file. It copies no rule and no C source.
 
-Both source and product Kbuilds derive x86 engine codegen from the actual kernel
+This Kbuild derives x86 engine codegen from the actual kernel
 configuration. The pinned source's `linux/rust-target.py` generates a softfloat
 target with configured external retpoline/indirect-branch features and SLS
 hardening; Kbuild adds external return thunks, IBT/no jump tables, call padding,

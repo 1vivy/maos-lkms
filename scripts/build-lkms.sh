@@ -27,6 +27,10 @@ for input in Module.symvers System.map include/generated/utsrelease.h .config; d
     fi
 done
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+# One engine archive for the bridge and standalone lanes; the source default
+# would build a second copy inside the materialized tree.
+EFVS_CARGO_TARGET_DIR=$root/out/linux-cargo
+export EFVS_CARGO_TARGET_DIR
 python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from scripts.kmi_modules import kmi_identity; kmi_identity(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))' "$root" "$source" "$branch" "$generation"
 # The freestanding engine uses its pinned nightly and rust-src, not CONFIG_RUST.
 # Fetch locked dependencies explicitly before its offline Kbuild invocation.

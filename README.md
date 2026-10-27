@@ -53,7 +53,7 @@ out/linux-cargo/<Rust target>/release/
   libefivar_store_ffi.a
 ```
 
-Each run replaces its own `out/` subtrees. The gate writes no artifact into a source directory and copies none from one. The store engine archive compiles in `out/linux-cargo/<Rust target>/release/`; `EFVS_CARGO_TARGET_DIR` selects another directory.
+Each run replaces its own `out/` subtrees. The gate writes no artifact into a source directory and copies none from one. The store engine archive compiles in `out/linux-cargo/<Rust target>/release/` and both store lanes share it; the gate exports `EFVS_CARGO_TARGET_DIR` and that variable selects another directory.
 
 For one project, pass an output directory. Without `--output-dir`, the module file stays in the module directory:
 
@@ -67,7 +67,7 @@ python3 scripts/kmi_modules.py build \
 
 Admission checks ELF type/architecture, normalized internal module name, vermagic flags, exported CRCs and private imports against the supplied kernel map. It runs at build time from the module plus `--kmi-out` alone and persists nothing. `just verify` and `scripts/build-lkms.sh` re-run it on the exact shipped bytes. Each build also writes `<module>.ko.build.json` beside the artifact: the KMI branch/generation, the pinned source revision, the module hash, the kernel-input hashes (`Module.symvers`, `System.map`, `utsrelease.h`) keyed by basename, the private imports the loader must resolve and the `.modinfo` name/vermagic. That file is descriptive release output only — no consumer reads or re-checks it, and it is never packaged into a payload or seed. Private vmlinux imports require a compatible loader or suitable exports; successful compilation alone is not a loading guarantee. Never strip or rewrite admitted bytes afterward. A different layout, CFI scheme, signature policy or KMI cannot be repaired by symbol lookup.
 
-`efivar_store` materializes exactly [`SOURCE_REVISION`](kernel/efivar_store/SOURCE_REVISION). `EFIVAR_STORE_REPO` may select a local repository containing that same commit; it does not change the pin. Its freestanding engine uses pinned `nightly-2026-08-08` with rust-src and locked dependencies; `CONFIG_RUST` is not required. The upstream source also ships standalone `linux/Kbuild` and non-autoloading `dkms.conf`; private imports still need exports or caller-owned prebinding.
+`efivar_store` materializes exactly [`SOURCE_REVISION`](kernel/efivar_store/SOURCE_REVISION), verifies the checked-out HEAD against that pin and rejects tracked changes. `EFIVAR_STORE_REPO` may select a local repository containing that same commit; it does not change the pin. Its freestanding engine uses pinned `nightly-2026-08-08` with rust-src and locked dependencies; `CONFIG_RUST` is not required. The module Kbuild sets `EFVS_ROOT` to the materialized tree and includes its `linux/Kbuild`, so the pinned source owns the module rules, the C glue and the engine build; `dkms.conf` there is non-autoloading. Private imports still need exports or caller-owned prebinding.
 
 CI host checks run on pushes/PRs. ACK and DDK gates require explicit complete prepared inputs and build both architectures. Incomplete header-only DDK images are rejected. Workflows upload artifacts, not deploy or publish releases.
 

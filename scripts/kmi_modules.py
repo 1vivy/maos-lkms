@@ -314,6 +314,8 @@ def efvs_source(directory: Path) -> Path:
     if present.returncode != 0:
         subprocess.run(["/usr/bin/git", "-C", str(checkout), "fetch", "origin", revision], check=True)
     subprocess.run(["/usr/bin/git", "-C", str(checkout), "checkout", "--detach", revision], check=True)
+    head = subprocess.check_output(["/usr/bin/git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
+    require(head == revision, f"efvs: materialized {head}, not the pinned {revision}")
     require(subprocess.check_output(["/usr/bin/git", "-C", str(checkout), "status", "--porcelain", "--untracked-files=no"]).strip() == b"", "efvs: source checkout is dirty")
     return checkout / "linux"
 
