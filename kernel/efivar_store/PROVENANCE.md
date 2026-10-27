@@ -7,23 +7,25 @@ It requires the checked-out HEAD to equal the pin and rejects tracked changes
 before Kbuild compiles the module.
 The build checks the module against the configured kernel output.
 
-The source pin is `64f6a3133cc0764986dbaf890c8a5958c8cdcb8f`.
+The source pin is `dfcc94b7c418e825a0904c2bb4f9a91193effa64`.
 ODP depends on the same revision as a git dependency for its firmware store.
-The pin documents every public item and denies missing docs. It also carries the
-build interface change: `EFVS_ROOT` in `linux/Kbuild` and `EFVS_OUTPUT_DIR` in
-`linux/Makefile` let this repository include the upstream rules instead of a copy.
-The shared format, storage and FFI code is unchanged from
+The pin documents every public item, denies missing docs, and uses edition 2024
+with Rust 1.88. It also carries the build interface change: `EFVS_ROOT` in
+`linux/Kbuild` and `EFVS_OUTPUT_DIR` in `linux/Makefile` let this repository
+include the upstream rules instead of a copy.
+The shared format, storage and FFI behaviour is unchanged from
 `483dc8b0b8bdc797fe79e0052ff2a161f70813ad`.
 
 `EFIVAR_STORE_REPO` can select a local clone.
 It does not change the recorded revision.
-The shared format, storage, FFI and CLI code is identical to the previous pin
-`483dc8b0b8bdc797fe79e0052ff2a161f70813ad`; only build files and documentation
-differ. A host check on 2026-10-27 initialized an EFVS image with the CLI at
-`483dc8b`, wrote two variables, then listed and read them with the CLI at
-`64f6a31` on the same file. The second CLI wrote a third variable and deleted
-the second, and the first CLI then listed and read the result. Both directions
-agree. See the ODP [EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared pin.
+The shared format, storage, FFI and CLI behaviour is identical to the previous pin
+`483dc8b0b8bdc797fe79e0052ff2a161f70813ad`; this module builds it with the
+pinned nightly, which is above the new Rust 1.88 source floor. A host check on
+2026-10-27 initialized an EFVS image with the CLI at `483dc8b`, wrote two
+variables, then listed and read them with the CLI at `dfcc94b` on the same file.
+The second CLI wrote a third variable and deleted the second, and the first CLI
+then listed and read the result. Both directions agree. See the ODP
+[EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared pin.
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
