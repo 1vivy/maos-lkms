@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       lane:
-        description: Fully prepared ACK runner or DDK image
+        description: Caller-supplied exact ACK/GKI source+output, or the canonical digest-pinned DDK image
         required: true
         type: choice
         options: [ack, ddk]
@@ -17,24 +17,22 @@ on:
         description: Exact ACK branch (for example android16-6.12)
         required: true
         type: string
+        default: android16-6.12
       generation:
         description: Exact KMI generation
         required: true
         type: number
+        default: 6
       kmi_src:
-        description: Absolute source path on selected runner/container
-        required: true
+        description: Absolute source path on the self-hosted runner (ack lane only)
+        required: false
         type: string
       aarch64_out:
-        description: Absolute complete arm64 output (real CRCs and System.map)
-        required: true
+        description: Absolute complete arm64 output, real CRCs and System.map (ack lane only)
+        required: false
         type: string
       x86_64_out:
-        description: Absolute complete x86_64 output (real CRCs and System.map)
-        required: true
-        type: string
-      ddk_release:
-        description: Exact DDK image release, required for DDK lane
+        description: Absolute complete x86_64 output, real CRCs and System.map (ack lane only)
         required: false
         type: string
 permissions:
@@ -46,6 +44,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: Exercise ELF, exact identity and build-info contracts
         run: python3 -m unittest scripts.test_kmi_modules
+  ddk-arm64:
+    # The canonical lane: push/PR and workflow_dispatch both exercise the
+    # digest-pinned DDK image with no caller-supplied inputs.
+    if: github.event_name != 'workflow_dispatch' || inputs.lane == 'ddk'
+    needs: host-contract
+    uses: ./.github/workflows/ddk-lkm.yml
+    with:
+      branch: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'android16-6.12' }}
+      generation: ${{ github.event_name == 'workflow_dispatch' && inputs.generation || 6 }}
   ack:
     if: github.event_name == 'workflow_dispatch' && inputs.lane == 'ack'
     needs: host-contract
@@ -56,14 +63,3 @@ jobs:
       kmi_src: ${{ inputs.kmi_src }}
       aarch64_out: ${{ inputs.aarch64_out }}
       x86_64_out: ${{ inputs.x86_64_out }}
-  ddk:
-    if: github.event_name == 'workflow_dispatch' && inputs.lane == 'ddk'
-    needs: host-contract
-    uses: ./.github/workflows/ddk-lkm.yml
-    with:
-      branch: ${{ inputs.branch }}
-      generation: ${{ inputs.generation }}
-      kmi_src: ${{ inputs.kmi_src }}
-      aarch64_out: ${{ inputs.aarch64_out }}
-      x86_64_out: ${{ inputs.x86_64_out }}
-      ddk_release: ${{ inputs.ddk_release }}

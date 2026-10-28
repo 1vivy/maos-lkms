@@ -1,6 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
-# Exact prepared ACK/DDK inputs; never synthesize CRCs or skip exact admission.
+# Exact prepared ACK/DDK inputs; never synthesize CRCs. Admission checks every
+# import against the target export/symbol list and the published module_layout
+# CRC (KMI_ABI), not against Module.symvers CRCs: the loader prebinds every
+# other import and the kernel checks module_layout itself.
 set -eu
 if [ "$#" -ne 5 ]; then
     echo "usage: $0 branch generation aarch64|x86_64 kernel-source kernel-output" >&2
@@ -45,6 +48,16 @@ echo "compiler: $("$clang_dir/clang" --version | head -n 1)" >&2
 # would build a second copy inside the materialized tree.
 EFVS_CARGO_TARGET_DIR=$root/out/linux-cargo
 export EFVS_CARGO_TARGET_DIR
+# Admission checks every import against the target KMI's export/symbol list
+# and, when known, its published module_layout CRC; it does not require
+# matching CRCs for any other import, because the loader prebinds them.
+run_kmi() {
+    if [ -n "${KMI_ABI:-}" ]; then
+        python3 "$root/scripts/kmi_modules.py" "$@" --kmi-abi "$KMI_ABI"
+    else
+        python3 "$root/scripts/kmi_modules.py" "$@"
+    fi
+}
 python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from scripts.kmi_modules import kmi_identity; kmi_identity(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))' "$root" "$source" "$branch" "$generation"
 # The freestanding engine uses its pinned nightly and rust-src, not CONFIG_RUST.
 # Fetch locked dependencies explicitly before its offline Kbuild invocation.
@@ -56,12 +69,12 @@ for module in dm-thin-pool part-projection efivarfs efivar_store; do
     directory=$root/kernel/$module
     module_destination=$destination/$module
     mkdir -p "$module_destination"
-    python3 "$root/scripts/kmi_modules.py" build --module-dir "$directory" --module "$module" \
+    run_kmi build --module-dir "$directory" --module "$module" \
         --branch "$branch" --generation "$generation" --arch "$arch" \
         --kmi-src "$source" --kmi-out "$output" --output-dir "$module_destination" \
         --jobs "${JOBS:-4}"
     # Verify the exact shipped bytes; do not strip after admission.
-    python3 "$root/scripts/kmi_modules.py" verify --branch "$branch" --generation "$generation" \
+    run_kmi verify --branch "$branch" --generation "$generation" \
         --arch "$arch" --kmi-out "$output" --module "$module_destination/$module.ko"
 done
 # Exercise the pinned source's standalone Kbuild too, including the x86_64
@@ -69,11 +82,11 @@ done
 standalone_destination=$root/out/standalone/$branch-$generation/$arch/efivar_store
 rm -rf "$standalone_destination"
 mkdir -p "$standalone_destination"
-python3 "$root/scripts/kmi_modules.py" build \
+run_kmi build \
     --module-dir "$root/kernel/efivar_store/.source/linux" --module efivar_store \
     --branch "$branch" --generation "$generation" --arch "$arch" \
     --kmi-src "$source" --kmi-out "$output" --output-dir "$standalone_destination" \
     --jobs "${JOBS:-4}"
-python3 "$root/scripts/kmi_modules.py" verify \
+run_kmi verify \
     --module "$standalone_destination/efivar_store.ko" \
     --branch "$branch" --generation "$generation" --arch "$arch" --kmi-out "$output"

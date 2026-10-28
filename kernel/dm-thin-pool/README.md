@@ -70,10 +70,17 @@ make -C kernel/dm-thin-pool KMI_SRC=/path/to/kernel KMI_OUT=/path/to/out KMI_BRA
   `KMI_GENERATION`, `KMI_ARCH` (`aarch64` or `x86_64`). No branch-only selection.
 - `JOBS` defaults to 13 and is capped at 13.
 - `KBUILD_GENDWARFKSYMS_STABLE=1` is always passed and old module objects are
-  cleaned first. Disabling MODVERSIONS or inserting empty versions is forbidden.
-- `KBUILD_MODPOST_WARN=1` allows non-KMI imports, but admission requires them
-  in `System.map`. Every version CRC (including `module_layout`) must match
-  `Module.symvers`; vermagic flags, not its release token, are enforced.
+  cleaned first.
+- `KBUILD_MODPOST_WARN=1` allows non-KMI imports, but admission requires every
+  undefined symbol to be exported by the target KMI (`gki/<arch>/abi.stg` on
+  the canonical DDK lane, or `Module.symvers` here) or present in
+  `System.map` on a target with `CONFIG_KALLSYMS_ALL=y`; vermagic flags, not
+  the release token, are enforced. Admission does not require matching
+  `Module.symvers` CRCs — the product's loader (`egysk/modules/lkm-loader`)
+  prebinds every other import before `init_module` — except `module_layout`,
+  which the kernel checks itself and so must match the target KMI's
+  published CRC when the built module carries a record for it. See
+  `../../README.md`.
 - Ship `dm-thin-pool.ko` alone in a payload. The `<module>.ko.build.json` written
   beside it is release information for readers of the artifact directory; nothing
   verifies or packages it.
@@ -119,13 +126,15 @@ The gate re-admits the exact shipped bytes. No stripping or mutation follows
 admission. `just host-contract` exercises the ELF/identity/build-info tests;
 neither recipe builds legacy init or daemon products.
 
-CI push/PR runs the host contracts. Manual build dispatch requires explicit
-branch, generation, source and both architecture output paths. The ACK lane uses
-a prepared self-hosted `egysk-kmi` runner; the DDK lane uses the exact
-selected DDK image release. Both architecture gates use real `Module.symvers`,
-`System.map`, `.config` and generated headers. A header-only/minimal DDK image
-without those complete matching references fails closed; modules_prepare is not
-an admission input generator. The pinned nightly and rust-src are installed for
-the freestanding store engine, with locked dependencies fetched before offline
-Kbuild. No CONFIG_RUST or root runtime is required. CI uploads artifacts only;
-the legacy daemon/init release and automatic publishing jobs are removed.
+CI push/PR runs the host contracts and the canonical digest-pinned arm64 DDK
+lane with no caller-supplied inputs. Manual build dispatch can instead use the
+ACK lane against an explicit branch, generation, source and both architecture
+output paths on the prepared self-hosted `egysk-kmi` runner. Both lanes use
+real `Module.symvers`, `System.map`, `.config` and generated headers (or the
+canonical lane's `gki/aarch64/abi.stg`); a header-only/minimal DDK image
+without those complete matching references fails closed; `modules_prepare` is
+not an admission input generator. The pinned nightly and rust-src are
+installed for the freestanding store engine, with locked dependencies
+fetched before offline Kbuild. No `CONFIG_RUST` or root runtime is required.
+CI uploads artifacts only; the legacy daemon/init release and automatic
+publishing jobs are removed.

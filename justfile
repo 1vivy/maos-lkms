@@ -13,5 +13,9 @@ verify artifact branch generation arch kmi_out:
 gate branch generation arch kmi_src kmi_out:
     sh scripts/build-lkms.sh "{{branch}}" "{{generation}}" "{{arch}}" "{{kmi_src}}" "{{kmi_out}}"
 
+# Canonical arm64 lane: digest-pinned DDK image, no caller-supplied inputs.
+gate-ddk branch generation:
+    sh scripts/build-ddk-lkms.sh "{{branch}}" "{{generation}}"
+
 host-contract:
     python3 -m unittest scripts.test_kmi_modules

@@ -52,7 +52,16 @@ def version_data(records: Iterable[tuple[str, int]]) -> bytes:
     return b"".join(struct.pack("<Q56s", crc, name.encode()) for name, crc in records)
 
 
-def module_file(name: str = "gpt", versions: bytes | None = None, extra: Mapping[str, bytes] | None = None, imports: Iterable[str] = ("known", "private"), machine: int = 183) -> bytes:
+def abi_text(records: Iterable[tuple[str, int]]) -> str:
+    """A minimal `gki/<arch>/abi.stg`-shaped dump: enough `elf_symbol` records
+    for `compat.abi_symbols` to parse, nothing else STG carries."""
+    return "".join(
+        f'elf_symbol {{\n  name: "{name}"\n  is_defined: true\n  symbol_type: FUNCTION\n'
+        f"  crc: {crc:#010x}\n  full_name: \"{name}\"\n}}\n"
+        for name, crc in records)
+
+
+def module_file(name: str = "gpt", versions: bytes | None = None, extra: Mapping[str, bytes] | None = None, imports: Iterable[str] = ("known",), machine: int = 183) -> bytes:
     sections = {".text": b"\0" * 4, ".modinfo": f"name={name}\0vermagic={VERMAGIC}\0".encode()}
     symbols = [(symbol, 0) for symbol in imports]
     if versions is None:
@@ -74,16 +83,70 @@ class KmiModuleCompatibility(unittest.TestCase):
         (self.output / "System.map").write_text("0000000000000001 T private\n")
         self.module = self.root / "gpt.ko"
 
-    def verify(self, data):
+    def verify(self, data, abi=None):
         self.module.write_bytes(data)
-        return compat.verify_module(self.module, "gpt", self.output)["imports"]
+        return compat.verify_module(self.module, "gpt", self.output, abi=abi)["imports"]
 
     def test_nonversioned_import_in_system_map_accepted(self):
-        self.assertEqual(self.verify(module_file()), {"versioned": 2, "kallsyms": ["private"]})
+        (self.output / ".config").write_text("CONFIG_ARM64=y\nCONFIG_KALLSYMS_ALL=y\n")
+        self.assertEqual(self.verify(module_file(imports=("known", "private"))),
+                          {"versioned": 2, "kallsyms": ["known", "private"]})
 
     def test_nonversioned_import_absent_rejected(self):
-        with self.assertRaisesRegex(compat.CompatibilityError, "absent from System.map: missing"):
+        (self.output / ".config").write_text("CONFIG_ARM64=y\nCONFIG_KALLSYMS_ALL=y\n")
+        with self.assertRaisesRegex(compat.CompatibilityError, "absent from the target KMI export/symbol list: missing"):
             self.verify(module_file(imports=("known", "missing")))
+
+    def test_private_import_without_kallsyms_all_rejected(self):
+        """The loader resolves private imports from `/proc/kallsyms`, which
+        only carries every kernel symbol with `CONFIG_KALLSYMS_ALL=y`."""
+        (self.output / ".config").write_text("CONFIG_ARM64=y\n")
+        with self.assertRaisesRegex(compat.CompatibilityError, "CONFIG_KALLSYMS_ALL=y"):
+            self.verify(module_file(imports=("known", "private")))
+
+    def test_non_layout_crc_mismatch_is_ignored_the_loader_prebinds_it(self):
+        """Every import except `module_layout` is prebound to `SHN_ABS` before
+        `init_module`, so the kernel never evaluates its version record."""
+        self.assertEqual(
+            self.verify(module_file(versions=version_data((("module_layout", 0x12345678), ("known", 0xdeadbeef))))),
+            {"versioned": 2, "kallsyms": ["known"]})
+
+    def test_module_layout_crc_mismatch_rejected_the_kernel_checks_it_itself(self):
+        with self.assertRaisesRegex(compat.CompatibilityError, "module_layout CRC does not match the target KMI"):
+            self.verify(module_file(versions=version_data((("module_layout", 1), ("known", 0x11223344)))))
+
+    def test_empty_versions_accepted_without_force_load(self):
+        """The DDK's patched modpost ships an empty `__versions`; a target
+        without `CONFIG_MODULE_FORCE_LOAD` loads it with a taint warning."""
+        self.assertEqual(self.verify(module_file(versions=b"")), {"versioned": 0, "kallsyms": ["known"]})
+
+    def test_empty_versions_rejected_with_force_load(self):
+        (self.output / ".config").write_text("CONFIG_ARM64=y\nCONFIG_MODULE_FORCE_LOAD=y\n")
+        with self.assertRaisesRegex(compat.CompatibilityError, "CONFIG_MODULE_FORCE_LOAD=y"):
+            self.verify(module_file(versions=b""))
+
+    def test_abi_lane_admits_symbols_outside_the_supplied_output(self):
+        """The pinned DDK build's own exports are a superset of its `abi.stg`
+        (gki/aarch64/abi.stg can lag the branch tip); a module that imports a
+        symbol only visible through the KMI ABI dump, not Module.symvers or
+        System.map, is still admitted."""
+        abi = self.root / "abi.stg"
+        abi.write_text(abi_text((("module_layout", 0x797f2b3e), ("abi_only", 0xabcdef01))))
+        self.assertEqual(
+            self.verify(module_file(imports=("abi_only",), versions=b""), abi=abi),
+            {"versioned": 0, "kallsyms": ["abi_only"]})
+
+    def test_abi_lane_checks_module_layout_against_the_published_crc(self):
+        abi = self.root / "abi.stg"
+        abi.write_text(abi_text((("module_layout", 0x797f2b3e),)))
+        with self.assertRaisesRegex(compat.CompatibilityError, "module_layout CRC does not match the target KMI"):
+            self.verify(module_file(versions=version_data((("module_layout", 0x12345678), ("known", 0x11223344)))), abi=abi)
+
+    def test_abi_file_without_module_layout_rejected(self):
+        abi = self.root / "abi.stg"
+        abi.write_text(abi_text((("other", 1),)))
+        with self.assertRaisesRegex(compat.CompatibilityError, "missing module_layout; not a KMI ABI dump"):
+            self.verify(module_file(), abi=abi)
 
     def test_release_ignored_flags_enforced(self):
         for release in ("6.12-phone", "6.12.58-android16-6-other"):
@@ -118,7 +181,7 @@ class KmiModuleCompatibility(unittest.TestCase):
             with self.subTest(kind=kind):
                 extra[".rela.text"] = struct.pack("<QQq", 0, (1 << 32) | kind, 0)
                 self.assertEqual(self.verify(module_file(extra=extra, machine=62)),
-                                 {"versioned": 2, "kallsyms": ["private"]})
+                                 {"versioned": 2, "kallsyms": ["known"]})
         for kind in (9, 41, 42):
             with self.subTest(kind=kind), self.assertRaisesRegex(
                     compat.CompatibilityError, f"unsupported x86_64 type {kind} in .rela.text"):
@@ -140,9 +203,8 @@ class KmiModuleCompatibility(unittest.TestCase):
         with self.assertRaisesRegex(compat.CompatibilityError, "extended count mismatch"):
             self.verify(module_file(versions=b"", extra={"__version_ext_names": b"module_layout\0", "__version_ext_crcs": bytes(8)}))
 
-    def test_wrong_crc_name_type_and_truncated_elf(self):
-        for data, reason in ((module_file(versions=version_data((("module_layout", 1),))), "CRC mismatch"),
-                             (module_file("thin"), "module name mismatch"),
+    def test_wrong_name_type_and_truncated_elf(self):
+        for data, reason in ((module_file("thin"), "module name mismatch"),
                              (elf_file({}, [], kind=2), "ET_REL"),
                              (module_file()[:-1], "truncated")):
             with self.subTest(reason=reason), self.assertRaisesRegex(compat.CompatibilityError, reason):
@@ -150,31 +212,42 @@ class KmiModuleCompatibility(unittest.TestCase):
 
     def test_build_info_records_release_facts_without_host_paths(self):
         """Release output beside the artifact: basename keys, no absolute path, nothing reads it back."""
+        (self.output / ".config").write_text("CONFIG_ARM64=y\nCONFIG_KALLSYMS_ALL=y\n")
         identity = {"branch": "android16-6.12", "generation": 6}
-        self.module.write_bytes(module_file())
+        self.module.write_bytes(module_file(imports=("known", "private")))
         facts = compat.verify_module(self.module, "gpt", self.output, "aarch64")
         info = compat.build_info(self.output, self.module, identity, facts, "0" * 40)
         self.assertEqual(set(info), {"schema_version", "kmi", "kmi_out_inputs", "module_sha256", "imports", "modinfo", "source_revision"})
+        self.assertEqual(info["schema_version"], 2)
         self.assertEqual(info["kmi_out_inputs"], {
             "Module.symvers": compat.digest(self.output / "Module.symvers"),
             "System.map": compat.digest(self.output / "System.map"),
             "utsrelease.h": compat.digest(self.output / "include/generated/utsrelease.h")})
         self.assertEqual(info["module_sha256"], compat.digest(self.module))
-        self.assertEqual(info["imports"], {"versioned": 2, "kallsyms": ["private"]})
+        self.assertEqual(info["imports"], {"versioned": 2, "kallsyms": ["known", "private"]})
         self.assertEqual(info["modinfo"], {"name": "gpt", "vermagic": VERMAGIC})
         self.assertEqual(info["source_revision"], "0" * 40)
         unpinned = compat.build_info(self.output, self.module, identity, facts, None)
         self.assertEqual(set(unpinned), set(info) - {"source_revision"})
         self.assertEqual(compat.build_info_path(self.module).name, "gpt.ko.build.json")
 
+    def test_build_info_records_the_abi_input_when_given(self):
+        abi = self.root / "abi.stg"
+        abi.write_text(abi_text((("module_layout", 0x797f2b3e),)))
+        self.module.write_bytes(module_file(versions=b""))
+        facts = compat.verify_module(self.module, "gpt", self.output, "aarch64", abi)
+        info = compat.build_info(self.output, self.module, {"branch": "android16-6.12", "generation": 6}, facts, None, abi)
+        self.assertEqual(info["kmi_abi"], {"abi.stg": compat.digest(abi)})
+
     def test_verify_payload_admits_modules_and_writes_nothing(self):
         """The standalone check works from the module plus --kmi-out alone."""
-        self.module.write_bytes(module_file())
+        (self.output / ".config").write_text("CONFIG_ARM64=y\nCONFIG_KALLSYMS_ALL=y\n")
+        self.module.write_bytes(module_file(imports=("known", "private")))
         report = {"module": "gpt", "kmi": {"branch": "android16-6.12", "generation": 6},
-                  "imports": {"versioned": 2, "kallsyms": ["private"]}}
+                  "imports": {"versioned": 2, "kallsyms": ["known", "private"]}}
         self.assertEqual(compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64"), [report])
         self.assertEqual(sorted(entry.name for entry in self.root.iterdir()), ["gpt.ko", "out"])
-        with self.assertRaisesRegex(compat.CompatibilityError, "absent from System.map: private"):
+        with self.assertRaisesRegex(compat.CompatibilityError, "absent from the target KMI export/symbol list: private"):
             (self.output / "System.map").write_text("0000000000000002 T other\n")
             compat.verify_payload(self.output, [self.module], "android16-6.12", 6, "aarch64")
 

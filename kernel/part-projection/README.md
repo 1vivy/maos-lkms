@@ -83,10 +83,13 @@ There is no privileged unseal shortcut.
 
 ## Build and evidence
 
-Use the root exact-KMI producer and admit against its complete output. Private DM/configfs imports
-are admitted only against the supplied System.map and require the product's
-compatible prebinding loader or real exports; namespace and exported CRC gates
-remain mandatory. ABI5 passed exact generation-6 admission on aarch64 and x86_64.
+Use the root exact-KMI producer and admit against its complete output (or the
+canonical digest-pinned DDK lane's own KMI ABI). Private DM/configfs imports
+are admitted against the target `System.map`/KMI export list and require the
+product's compatible prebinding loader (`egysk/modules/lkm-loader`) or real
+exports; namespace and KMI identity/`module_layout`-CRC gates remain
+mandatory, other `Module.symvers` CRCs are not compared (see `../../README.md`).
+ABI5 passed exact generation-6 admission on aarch64 and x86_64.
 The phone mounted projected `/metadata` and encrypted `/data` with stock init
 and reached `sys.boot_completed=1` in permissive mode
 (`20261010T232708Z-egysk-cutover`). Anchored multi-LUN sealing, reload and busy

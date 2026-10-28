@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 """Build and admit ACK KMI modules (arm64 phones, x86_64 Cuttlefish).
 
-Admission runs at build time against the supplied kernel output (`--kmi-out`):
-Module.symvers CRCs, vermagic flags, optional relocation kinds and private
-imports resolved against System.map. Each build additionally writes
-`<module>.ko.build.json` release information beside the artifact. That file is
-descriptive output for release readers: nothing admits, re-checks or packages
-it, and the admission check itself reads no side file.
+Admission runs at build time against the supplied kernel output (`--kmi-out`)
+and, for the pinned DDK arm64 lane, the published KMI ABI (`--kmi-abi`,
+`gki/<arch>/abi.stg`): vermagic flags, optional relocation kinds, and every
+undefined symbol present in the target export/symbol list. CRCs are not
+compared against `Module.symvers`, because the product's loader
+(`egysk/modules/lkm-loader`, a KernelSU `ksuinit` derivative) prebinds every
+undefined symbol to its running-kernel address (`SHN_ABS`) before
+`init_module`, so the kernel never evaluates their version records. The one
+exception is `module_layout`, which the kernel checks itself
+(`check_modstruct_version`) independent of prebinding: a present record for it
+must match the target KMI's published CRC, or the kernel refuses the module.
+An absent or empty `__versions` table loads with a taint warning on a kernel
+built without `CONFIG_MODULE_FORCE_LOAD` (the GKI default); this is the
+expected shape of a module built through the DDK's patched modpost. Each
+build additionally writes `<module>.ko.build.json` release information
+beside the artifact. That file is descriptive output for release readers:
+nothing admits, re-checks or packages it, and the admission check itself
+reads no side file.
 """
 from __future__ import annotations
 import argparse
@@ -61,6 +73,7 @@ class BuildInfo(TypedDict):
     schema_version: int
     kmi: Kmi
     kmi_out_inputs: dict[str, str]
+    kmi_abi: NotRequired[dict[str, str]]
     module_sha256: str
     imports: Imports
     modinfo: Modinfo
@@ -78,6 +91,7 @@ ARCHES = {183: ("arm64", "SMP preempt mod_unload modversions aarch64"),
           62: ("x86_64", "SMP preempt mod_unload modversions")}
 CONFIG_ARCHES = {"CONFIG_ARM64=y": "arm64", "CONFIG_X86_64=y": "x86_64"}
 INPUTS = ("Module.symvers", "System.map", "include/generated/utsrelease.h")
+CONFIG_FLAGS = ("CONFIG_MODULE_FORCE_LOAD=y", "CONFIG_KALLSYMS_ALL=y")
 IDENTITY_FILES = ("build.config.constants", "build.config.common", "bazel/constants.scl")
 class CompatibilityError(ValueError):
     pass
@@ -177,16 +191,20 @@ def symvers(path: PathInput) -> SymbolCrcs:
     return result
 
 
-def import_versions(elf: Elf) -> SymbolCrcs:
+def version_records(elf: Elf) -> SymbolCrcs:
+    """Parse `__versions`/`__version_ext_*` if present. Absence is a distinct,
+    load-relevant fact from `verify_module`, not an error here: the loader
+    prebinds every undefined symbol and the kernel only re-checks
+    `module_layout` on its own, so a record's CRC is informational except for
+    that one name."""
     normal = elf.section("__versions")
     crcs, names = elf.section("__version_ext_crcs"), elf.section("__version_ext_names")
-    require(normal or (crcs and names), "import-versions: missing or empty __versions (including module_layout)")
     tables: list[list[tuple[int, str]]] = []
     if normal:
         require(len(normal) % 64 == 0, "import-versions: malformed __versions records")
         tables.append([(crc, Elf.string(name, 0)) for crc, name in struct.iter_unpack("<Q56s", normal)])
-    if crcs or names:
-        require(crcs and len(crcs) % 4 == 0 and names.endswith(b"\0"), "import-versions: malformed extended versions")
+    if crcs:
+        require(len(crcs) % 4 == 0 and names.endswith(b"\0"), "import-versions: malformed extended versions")
         strings = names[:-1].split(b"\0")
         # modpost emits concatenated C strings with explicit per-name NULs,
         # followed by the C initializer's implicit final NUL.
@@ -202,8 +220,48 @@ def import_versions(elf: Elf) -> SymbolCrcs:
             require(name not in versions or versions[name] == crc, f"import-versions: basic/extended CRC mismatch for {name}")
             seen.add(name)
             versions[name] = crc
-        require("module_layout" in seen, "import-versions: missing module_layout")
     return versions
+
+
+def abi_symbols(path: PathInput) -> SymbolCrcs:
+    """The published KMI's exported symbols and CRCs from a `gki/<arch>/abi.stg`
+    ABI monitoring dump (`elf_symbol { name: "..." is_defined: true crc: 0x... }`
+    records). Not every real export of a build against this branch is
+    necessarily listed here (the ABI snapshot can lag the branch tip); callers
+    combine it with the target `Module.symvers`/`System.map`, not use it alone."""
+    result: SymbolCrcs = {}
+    name: str | None = None
+    defined = False
+    crc: int | None = None
+    in_record = False
+    for line in Path(path).read_text().splitlines():
+        text = line.strip()
+        if text == "elf_symbol {":
+            require(not in_record, "abi: nested elf_symbol record")
+            in_record, name, defined, crc = True, None, False, None
+        elif in_record and text == "}":
+            if defined and name is not None:
+                require(crc is not None, f"abi: {name} is_defined with no crc")
+                require(name not in result, f"abi: duplicate {name}")
+                result[name] = crc
+            in_record = False
+        elif in_record and text.startswith("name: "):
+            name = text[len("name: "):].strip('"')
+        elif in_record and text.startswith("is_defined: "):
+            defined = text[len("is_defined: "):] == "true"
+        elif in_record and text.startswith("crc: "):
+            crc = int(text[len("crc: "):], 16)
+    require(not in_record, "abi: unterminated elf_symbol record")
+    require("module_layout" in result, "abi: missing module_layout; not a KMI ABI dump")
+    return result
+
+
+def config_flags(output: Path) -> set[str]:
+    """The `.config` lines this admission cares about, or an empty set without one."""
+    config = output / ".config"
+    if not config.is_file():
+        return set()
+    return {line for line in config.read_text().splitlines() if line in CONFIG_FLAGS}
 
 
 def kernel_arch(output: Path) -> str | None:
@@ -227,8 +285,22 @@ def kmi_identity(source: Path, branch: str, generation: int) -> Kmi:
     return {"branch": branch, "generation": generation}
 
 
-def verify_module(path: PathInput, name: str, output: Path, architecture: str | None = None) -> ModuleFacts:
-    """Admit one built module against the exact kernel output; no side file is read."""
+def verify_module(path: PathInput, name: str, output: Path, architecture: str | None = None,
+                  abi: Path | None = None) -> ModuleFacts:
+    """Admit one built module against the exact kernel output and, on the DDK
+    arm64 lane, the published KMI ABI; no side file is read.
+
+    Every undefined symbol must be exported by the target KMI (`abi`, when
+    given, or `Module.symvers`) or present in the target `System.map` on a
+    kernel that makes every symbol visible to the loader's kallsyms resolver
+    (`CONFIG_KALLSYMS_ALL=y`): the loader itself resolves imports this way,
+    not modversion CRCs. A present `module_layout` version record must match
+    the target KMI's published CRC regardless, because the kernel checks that
+    one itself (`check_modstruct_version`), independent of prebinding. An
+    absent or empty `__versions` table is only admitted on a target that does
+    not set `CONFIG_MODULE_FORCE_LOAD` (the GKI default); on a force-load
+    kernel the loader's unflagged `init_module` would be refused outright.
+    """
     elf = Elf(path)
     require(elf.kind == 1 and elf.machine in ARCHES, "elf: expected ET_REL aarch64 or x86_64")
     arch, flags = ARCHES[elf.machine]
@@ -238,23 +310,38 @@ def verify_module(path: PathInput, name: str, output: Path, architecture: str | 
     require(tree is None or tree == arch, f"elf: {arch} module for a {tree} KMI tree")
     if elf.machine == 62:
         elf.verify_x86_relocations()
-    imports = {s.name for s in elf.symbols() if s.name and s.shndx == 0 and s.info >> 4 in (1, 2)}
-    versions = import_versions(elf)
+    imports = {s.name for s in elf.symbols() if s.name and s.shndx == 0}
+    versions = version_records(elf)
     exported = symvers(output / "Module.symvers")
-    for symbol, crc in versions.items():
-        require(symbol in exported, f"import-versions: {symbol} absent from KMI Module.symvers")
-        require(crc == exported[symbol], f"import-versions: CRC mismatch for {symbol}")
-    kallsyms = imports - versions.keys()
-    kernel_symbols = {line.split()[2] for line in (output / "System.map").read_text().splitlines() if len(line.split()) >= 3}
-    missing = kallsyms - kernel_symbols
-    require(not missing, "imports: absent from System.map: " + ", ".join(sorted(missing)))
+    layout_crc = exported.get("module_layout")
+    target = set(exported)
+    if abi is not None:
+        abi_exported = abi_symbols(abi)
+        layout_crc = abi_exported["module_layout"]
+        target |= abi_exported.keys()
+    if "module_layout" in versions:
+        require(layout_crc is not None, "import-versions: module_layout CRC unknown for this target; pass --kmi-abi")
+        require(versions["module_layout"] == layout_crc,
+                "import-versions: module_layout CRC does not match the target KMI (the kernel checks this one itself)")
+    flags_present = config_flags(output)
+    if not versions:
+        require("CONFIG_MODULE_FORCE_LOAD=y" not in flags_present,
+                "import-versions: empty __versions is refused by this target's CONFIG_MODULE_FORCE_LOAD=y")
+    private = imports - target
+    if private:
+        kernel_symbols = {line.split()[2] for line in (output / "System.map").read_text().splitlines() if len(line.split()) >= 3}
+        missing = private - kernel_symbols
+        require(not missing, "imports: absent from the target KMI export/symbol list: " + ", ".join(sorted(missing)))
+        require("CONFIG_KALLSYMS_ALL=y" in flags_present,
+                "imports: private imports require this target's CONFIG_KALLSYMS_ALL=y for the loader's kallsyms resolver: "
+                + ", ".join(sorted(private)))
     modinfo = elf.section(".modinfo").split(b"\0")
     vermagic = [entry[9:].decode("ascii") for entry in modinfo if entry.startswith(b"vermagic=")]
     tokens = vermagic[0].split() if len(vermagic) == 1 else []
     require(len(tokens) == 1 + len(flags.split()) and tokens[1:] == flags.split(), "vermagic: expected release followed by " + flags)
     names = [entry[5:].decode("ascii") for entry in modinfo if entry.startswith(b"name=")]
     require(names == [name.replace("-", "_")], "modinfo: module name mismatch")
-    return {"imports": {"versioned": len(versions), "kallsyms": sorted(kallsyms)},
+    return {"imports": {"versioned": len(versions), "kallsyms": sorted(imports)},
             "modinfo": {"name": names[0], "vermagic": vermagic[0]}}
 
 
@@ -263,28 +350,32 @@ def build_info_path(module: PathInput) -> Path:
 
 
 def build_info(output: Path, module: PathInput, identity: Kmi, facts: ModuleFacts,
-               revision: str | None) -> BuildInfo:
+               revision: str | None, abi: Path | None = None) -> BuildInfo:
     """Release information for the artifact. Input hashes are keyed by basename, not host path."""
-    result: BuildInfo = {"schema_version": 1, "kmi": identity,
+    result: BuildInfo = {"schema_version": 2, "kmi": identity,
                          "kmi_out_inputs": {Path(name).name: digest(output / name) for name in INPUTS},
                          "module_sha256": digest(module), "imports": facts["imports"],
                          "modinfo": facts["modinfo"]}
+    if abi is not None:
+        result["kmi_abi"] = {Path(abi).name: digest(abi)}
     if revision is not None:
         result["source_revision"] = revision
     return result
 
 
 def verify_payload(output: PathInput, modules: Sequence[PathInput], branch: str,
-                   generation: int, architecture: str) -> list[ModuleReport]:
-    """Admit already-built modules against the exact kernel output; nothing is read or written."""
+                   generation: int, architecture: str, abi: PathInput | None = None) -> list[ModuleReport]:
+    """Admit already-built modules against the exact kernel output and, on the
+    DDK arm64 lane, the published KMI ABI; nothing is read or written."""
     output = Path(output).resolve(strict=True)
+    abi_path = Path(abi).resolve(strict=True) if abi else None
     require(re.fullmatch(r"android\d+-\d+\.\d+", branch) and generation >= 0,
             "kmi: exact branch and generation required")
     identity: Kmi = {"branch": branch, "generation": generation}
     reports: list[ModuleReport] = []
     for module in modules:
         name = Path(module).stem
-        facts = verify_module(module, name, output, architecture)
+        facts = verify_module(module, name, output, architecture, abi_path)
         source = output / "source"
         if any((source / identity_file).is_file() for identity_file in IDENTITY_FILES):
             # The output's own source tree must claim the identity being admitted.
@@ -382,8 +473,9 @@ def build(args: argparse.Namespace) -> ModuleReport:
         # directory and clean the intermediates: no artifact stays behind.
         shutil.move(str(directory / (name + ".ko")), str(module))
         run_kbuild(command + ["clean"], env, log, append=True)
-    facts = verify_module(module, name, output, args.arch)
-    build_info_path(module).write_text(json.dumps(build_info(output, module, identity, facts, revision), indent=2, sort_keys=True) + "\n")
+    abi_path = Path(args.kmi_abi).resolve(strict=True) if args.kmi_abi else None
+    facts = verify_module(module, name, output, args.arch, abi_path)
+    build_info_path(module).write_text(json.dumps(build_info(output, module, identity, facts, revision, abi_path), indent=2, sort_keys=True) + "\n")
     return {"module": name, "kmi": identity, "imports": facts["imports"]}
 
 
@@ -392,6 +484,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("action", choices=("build", "verify"))
     parser.add_argument("--kmi-src", default=os.environ.get("KMI_SRC"))
     parser.add_argument("--kmi-out", default=os.environ.get("KMI_OUT"), required=not os.environ.get("KMI_OUT"))
+    parser.add_argument("--kmi-abi", default=os.environ.get("KMI_ABI"))
     parser.add_argument("--module", action="append", required=True)
     parser.add_argument("--module-dir")
     parser.add_argument("--output-dir")
@@ -401,7 +494,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--jobs", type=int, default=13)
     args = parser.parse_args(argv)
     try:
-        result = build(args) if args.action == "build" else verify_payload(args.kmi_out, args.module, args.branch, args.generation, args.arch)
+        result = build(args) if args.action == "build" else verify_payload(args.kmi_out, args.module, args.branch, args.generation, args.arch, args.kmi_abi)
         print(json.dumps({"status": "accepted", "kmi": {"branch": args.branch, "generation": args.generation}, "result": result}, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, struct.error, subprocess.CalledProcessError) as error:

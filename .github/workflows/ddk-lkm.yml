@@ -1,4 +1,4 @@
-name: maos-lkms independent DDK LKM gates
+name: maos-lkms canonical arm64 DDK lane
 on:
   workflow_call:
     inputs:
@@ -8,65 +8,24 @@ on:
       generation:
         required: true
         type: number
-      kmi_src:
-        required: true
-        type: string
-      aarch64_out:
-        required: true
-        type: string
-      x86_64_out:
-        required: true
-        type: string
-      ddk_release:
-        required: true
-        type: string
 permissions:
   contents: read
 jobs:
-  modules:
-    runs-on: [self-hosted, linux, x64, egysk-kmi]
-    container:
-      image: ghcr.io/ylarod/ddk-min:${{ inputs.branch }}-${{ inputs.ddk_release }}
-      # The container sees only the runner workspace plus these binds. ddk-min
-      # ships the full ACK source and an arm64 build output whose CRCs are not
-      # the published KMI, so the caller-supplied exact source and complete
-      # per-architecture outputs are transferred by binding each absolute path
-      # at the identical container path; nothing is copied or synthesized
-      # inside the container. The image's own clang compiles this lane.
-      volumes:
-        - ${{ inputs.kmi_src }}:${{ inputs.kmi_src }}
-        - ${{ inputs.aarch64_out }}:${{ inputs.aarch64_out }}
-        - ${{ inputs.x86_64_out }}:${{ inputs.x86_64_out }}
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [aarch64, x86_64]
+  arm64:
+    # No caller-supplied kernel source or output: the digest-pinned DDK image
+    # is the build input, the way KernelSU's CI builds its GKI modules against
+    # the same image family. A hosted runner with docker is sufficient.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Require complete exact output, not modules_prepare
-        env:
-          KMI_OUT: ${{ matrix.arch == 'aarch64' && inputs.aarch64_out || inputs.x86_64_out }}
-        run: |
-          for input in Module.symvers System.map include/generated/utsrelease.h .config; do
-            test -s "$KMI_OUT/$input" || { echo "Missing real kernel input: $KMI_OUT/$input" >&2; exit 2; }
-          done
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-08-08
           components: rust-src
-      - name: Build and admit exact independent LKMs
-        env:
-          BRANCH: ${{ inputs.branch }}
-          GENERATION: ${{ inputs.generation }}
-          KMI_SRC: ${{ inputs.kmi_src }}
-          KMI_OUT: ${{ matrix.arch == 'aarch64' && inputs.aarch64_out || inputs.x86_64_out }}
-          KMI_ARCH: ${{ matrix.arch }}
-          DDK_CLANG_DIR: /opt/ddk/clang/clang-r536225/bin
-        run: |
-          set -eu
-          sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT"
+      - name: Build and admit the canonical arm64 lane
+        run: sh scripts/build-ddk-lkms.sh "${{ inputs.branch }}" "${{ inputs.generation }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: maos-lkms-ddk-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}
+          name: maos-lkms-ddk-${{ inputs.branch }}-${{ inputs.generation }}-aarch64
           path: out/
           if-no-files-found: error
