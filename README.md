@@ -5,10 +5,10 @@ This repository builds independent Linux kernel modules. No module depends on th
 
 | Project | Artifact / internal name | Interface |
 | --- | --- | --- |
-| [`dm-thin-pool`](kernel/dm-thin-pool/) | `dm-thin-pool.ko` / `dm_thin_pool` | Device-mapper thin-pool/thin targets; owned fork, private symbol renames and existing target behavior |
+| [`dm-thin-pool`](kernel/dm-thin-pool/) | `dm-thin-pool.ko` / `dm_thin_pool` | Device-mapper thin-pool/thin targets. Owned fork with private symbol renames and existing target behavior |
 | [`part-projection`](kernel/part-projection/) | `part-projection.ko` / `part_projection` | Configfs ABI 6, named DM disks and pp-range/pp-meta/pp-hole at `/config/part-projection` |
 | [`efivarfs`](kernel/efivarfs/) | `efivarfs.ko` / `efivarfs` | Upstream efivarfs plus the project-GUID patch |
-| [`efivar_store`](kernel/efivar_store/) | `efivar_store.ko` / `efivar_store` | Block-backed EFI variable service; pinned Rust EFVS engine behind C glue |
+| [`efivar_store`](kernel/efivar_store/) | `efivar_store.ko` / `efivar_store` | Block-backed EFI variable service. Pinned Rust EFVS engine behind C glue |
 
 Each module has its own Kbuild files and provenance. Shared code is in [`include/egysk_lkm.h`](include/egysk_lkm.h). The header defines descriptive names, versions, ABIs, criticality, and readiness metadata. This metadata does not authorize callers. This repository does not own PID 1 orchestration or module activation. It does not own product packaging or Android lifecycle scripts.
 
