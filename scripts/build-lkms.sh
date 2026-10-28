@@ -27,6 +27,20 @@ for input in Module.symvers System.map include/generated/utsrelease.h .config; d
     fi
 done
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+# Compile with the pinned DDK clang, never the host PATH LLVM. The bootstrap
+# extracts it under out/; a container lane names the copy in its own image.
+clang_dir=${DDK_CLANG_DIR:-$root/out/ddk/clang/clang-r536225/bin}
+if [ ! -x "$clang_dir/clang" ] || [ ! -x "$clang_dir/ld.lld" ]; then
+    echo "pinned DDK clang required: $clang_dir (run sh scripts/bootstrap-ddk-clang.sh, or set DDK_CLANG_DIR)" >&2
+    exit 2
+fi
+PATH=$clang_dir:$PATH
+export PATH
+# The DDK image exports an arm64 CROSS_COMPILE; kbuild turns that value into a
+# --target that contradicts the x86_64 leg. Drop it for both legs and let kbuild
+# derive the target from ARCH.
+unset CROSS_COMPILE
+echo "compiler: $("$clang_dir/clang" --version | head -n 1)" >&2
 # One engine archive for the bridge and standalone lanes; the source default
 # would build a second copy inside the materialized tree.
 EFVS_CARGO_TARGET_DIR=$root/out/linux-cargo

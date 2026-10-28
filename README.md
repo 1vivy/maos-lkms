@@ -15,18 +15,29 @@ Each directory has its own Kbuild/Makefile and provenance. Shared code is limite
 
 ## Build and admit exact artifacts
 
-Supply the complete matching ACK source and output. Kernel headers alone are not sufficient.
+Supply the complete matching ACK/GKI source and output. Kernel headers alone are not sufficient.
 
 The build needs these inputs:
 
 1. A prepared ACK source tree. It must contain a readable `Makefile`.
 2. The complete matching kernel output tree. It must contain `.config`, `Module.symvers`, `System.map` and `include/generated/utsrelease.h`.
-3. The matching LLVM toolchain, through `PATH`.
+3. The pinned DDK clang `clang-r536225`, extracted by this repository's bootstrap. The host `PATH` LLVM is not used.
 4. The pinned `nightly-2026-08-08` Rust toolchain with `rust-src`, for the freestanding store engine.
+
+The compiler is a repository-owned input, not the host one:
+
+```sh
+sh scripts/bootstrap-ddk-clang.sh
+```
+
+The bootstrap pulls `ghcr.io/ylarod/ddk-min@sha256:fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee`
+by digest, copies `clang-r536225` into the ignored `out/ddk/clang/` tree, checks the reported version, compiles one file for each architecture, and records the image digest, the version line and the `clang`/`ld.lld` sha256 in `out/ddk/clang/ddk-clang.json`. `DDK_CLANG_DIR` may name another clang `bin` directory. Without either, `scripts/build-lkms.sh` exits with status 2 and names the bootstrap. `scripts/build-lkms.sh` also drops `CROSS_COMPILE`, so kbuild derives the target from `ARCH` for both legs.
 
 Supported architecture names are `aarch64` and `x86_64`. When an input is absent or incomplete, the script exits with status 2 and names the missing input. It does not synthesize CRCs and does not skip exact admission.
 
-Both real-build lanes run on the prepared self-hosted `egysk-kmi` runner. A hosted empty runner cannot provide caller-owned complete outputs. The DDK container lane binds each caller-supplied absolute path (`kmi_src`, `aarch64_out`, `x86_64_out`) into the job container at the identical path. Nothing is copied or synthesized inside the image, and an unbound path is absent there. ddk-min exports an arm64 `CROSS_COMPILE`, and kbuild turns that value into a `--target=` that contradicts the x86_64 leg. The workflow unsets it and lets kbuild derive the target from `ARCH`.
+The DDK image's own kernel tree is not a KMI input. For `android16-6.12` it holds the full ACK source, an arm64 build output (`.config`, `vmlinux`, a 19052-line `Module.symvers`, `System.map`, `include/generated/utsrelease.h`) and no x86_64 output. Its `.config` equals the plain `make gki_defconfig` product, yet its CRCs are not the published KMI: against `gki/aarch64/abi.stg` of `kernel/common` branch `android16-6.12` (`606d03f6`), 3384 of the 10308 shared symbols carry the same CRC and 6924 differ, starting with `module_layout` (`0x797f2b3e` published, `0xe143d454` in the image). Its source also carries a patched `scripts/mod/modpost.c` that disables export checking, so a module built against it gets an empty `__versions`; the gate rejects that module with `import-versions: missing or empty __versions (including module_layout)`. Use GKI/ACK built outputs for the branch instead.
+
+Both real-build lanes run on the prepared self-hosted `egysk-kmi` runner. A hosted empty runner cannot provide caller-owned complete outputs. The ACK lane bootstraps the pinned clang, so that runner needs docker. The DDK container lane binds each caller-supplied absolute path (`kmi_src`, `aarch64_out`, `x86_64_out`) into the job container at the identical path. Nothing is copied or synthesized inside the image, and an unbound path is absent there. That lane compiles with the image's own clang through `DDK_CLANG_DIR=/opt/ddk/clang/clang-r536225/bin`.
 
 ```sh
 python3 -m unittest scripts.test_kmi_modules
@@ -69,7 +80,7 @@ Admission checks ELF type/architecture, normalized internal module name, vermagi
 
 `efivar_store` materializes exactly [`SOURCE_REVISION`](kernel/efivar_store/SOURCE_REVISION), verifies the checked-out HEAD against that pin and rejects tracked changes. `EFIVAR_STORE_REPO` may select a local repository containing that same commit; it does not change the pin. Its freestanding engine uses pinned `nightly-2026-08-08` with rust-src and locked dependencies; `CONFIG_RUST` is not required. The module Kbuild sets `EFVS_ROOT` to the materialized tree and includes its `linux/Kbuild`, so the pinned source owns the module rules, the C glue and the engine build; `dkms.conf` there is non-autoloading. Private imports still need exports or caller-owned prebinding.
 
-CI host checks run on pushes/PRs. ACK and DDK gates require explicit complete prepared inputs and build both architectures. Incomplete header-only DDK images are rejected. Workflows upload artifacts, not deploy or publish releases.
+CI host checks run on pushes/PRs. The ACK and DDK lanes require explicit complete prepared inputs and build both architectures. The DDK image's own kernel outputs are rejected, because their CRCs do not match the published KMI. Workflows upload artifacts, not deploy or publish releases.
 
 Dependabot updates GitHub Actions only. This repository has no root Cargo
 workspace; the EFI engine's locked Rust dependencies belong to its pinned source
@@ -103,5 +114,7 @@ remain separate qualifications.
 The current arm64 `android16-6.12-6` builds passed exact artifact admission. The standalone backend and frontend additionally passed the QEMU immediate-read/update/delete/reboot/compaction/torn-tail/blank-refusal gate. That VM has no enforcing Android policy: it does not prove HAL-domain access, PIN unlock, native EFI replacement, or phone boot. The full platform/OTA and enforcing-device gates remain separate from these source/build checks.
 
 Both architectures were also built and admitted inside the dated `ghcr.io/ylarod/ddk-min:android16-6.12-20260828` container (digest `sha256:fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee`): all four projects and the pinned standalone `linux/Kbuild` path, against the caller-supplied complete outputs bound into the container. Two independent runs produced byte-identical modules, and every per-module build record matched the shipped artifact bytes and kernel-input digests. That run loaded no module and touched no device, so it proves compilation and admission only. The arm64 lane recorded `warning: the compiler differs from the one used to build the kernel` (image clang build `14043575` versus the `12833971` that built the supplied arm64 output); the x86_64 Cuttlefish output carries a recorded stock `module_layout` CRC adjustment, so it is an admitted build against that supplied output, not a fully source-qualified self-built kernel.
+
+That image is also why the DDK kernel tree is refused as an input. It is not header-only: it ships an arm64 `vmlinux`, a 19052-line `Module.symvers` and a `System.map` next to a full ACK source tree, and no x86_64 output. Its `Module.symvers` does not carry the published KMI CRCs: of the 10308 symbols it shares with `gki/aarch64/abi.stg` at `kernel/common` `606d03f6` (`android16-6.12`), 3384 agreed and 6924 differed, `module_layout` among them. Admission against it would accept modules that match that build and not the KMI. The image stays a builder, and the caller supplies the outputs.
 
 Retain the per-project licenses and provenance. Root-level inherited tooling remains covered by [`LICENSE`](LICENSE); kernel projects carry their own license declarations.

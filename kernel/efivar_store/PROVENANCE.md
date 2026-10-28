@@ -54,7 +54,8 @@ crate hashes and no `core::fmt::Formatter` methods (`20261008T055846Z-phone-efvs
 The Rust object is built offline with `nightly-2026-08-08`, `-Z build-std=core,compiler_builtins`
 for `aarch64-unknown-none-softfloat` and `panic=immediate-abort`; x86 uses the
 generated softfloat kernel target. C compilation and native-object linking use
-the same `LLVM=1` toolchain selected on PATH as the other ACK modules. Rust emits
+the repository's pinned DDK clang (`scripts/bootstrap-ddk-clang.sh`, or
+`DDK_CLANG_DIR`), as the other modules do. Rust emits
 no LLVM bitcode, so the former mixed-version bitcode-linking workaround is gone.
 
 Where private imports are not kernel exports, use an ELF relocating loader;

@@ -28,10 +28,11 @@ jobs:
     container:
       image: ghcr.io/ylarod/ddk-min:${{ inputs.branch }}-${{ inputs.ddk_release }}
       # The container sees only the runner workspace plus these binds. ddk-min
-      # ships its own source and a modules_prepare-only kdir, so the
-      # caller-supplied exact source and complete per-architecture outputs are
-      # transferred by binding each absolute path at the identical container
-      # path; nothing is copied or synthesized inside the container.
+      # ships the full ACK source and an arm64 build output whose CRCs are not
+      # the published KMI, so the caller-supplied exact source and complete
+      # per-architecture outputs are transferred by binding each absolute path
+      # at the identical container path; nothing is copied or synthesized
+      # inside the container. The image's own clang compiles this lane.
       volumes:
         - ${{ inputs.kmi_src }}:${{ inputs.kmi_src }}
         - ${{ inputs.aarch64_out }}:${{ inputs.aarch64_out }}
@@ -60,10 +61,9 @@ jobs:
           KMI_SRC: ${{ inputs.kmi_src }}
           KMI_OUT: ${{ matrix.arch == 'aarch64' && inputs.aarch64_out || inputs.x86_64_out }}
           KMI_ARCH: ${{ matrix.arch }}
+          DDK_CLANG_DIR: /opt/ddk/clang/clang-r536225/bin
         run: |
           set -eu
-          # ddk-min's arm64 prefix overrides ARCH-derived clang targets.
-          unset CROSS_COMPILE
           sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT"
       - uses: actions/upload-artifact@v7
         with:

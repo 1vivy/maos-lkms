@@ -1,3 +1,7 @@
+# Extracts the pinned DDK clang into the ignored out/ tree.
+bootstrap:
+    sh scripts/bootstrap-ddk-clang.sh
+
 # Independent source layout, exact configured ACK/DDK artifacts, no daemon/init builds.
 build module branch generation arch kmi_src kmi_out jobs="4":
     python3 scripts/kmi_modules.py build --module-dir "kernel/{{module}}" --module "{{module}}" --branch "{{branch}}" --generation "{{generation}}" --arch "{{arch}}" --kmi-src "{{kmi_src}}" --kmi-out "{{kmi_out}}" --jobs "{{jobs}}"
