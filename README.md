@@ -64,7 +64,7 @@ out/linux-cargo/<Rust target>/release/
   libefivar_store_ffi.a
 ```
 
-Each run replaces its own `out/` subtrees. The gate writes no artifact into a source directory and copies none from one. The store engine archive compiles in `out/linux-cargo/<Rust target>/release/` and both store lanes share it; the gate exports `EFVS_CARGO_TARGET_DIR` and that variable selects another directory.
+Each run replaces its own `out/` subtrees. Kernels before 6.13 have no `MO=`, so a build writes the module into the module directory; the gate moves the shipped `.ko` into `out/` and then cleans the intermediates, so the source tree keeps no build artifact. The store engine archive compiles in `out/linux-cargo/<Rust target>/release/` and both store lanes share it; the gate exports `EFVS_CARGO_TARGET_DIR` and that variable selects another directory.
 
 For one project, pass an output directory. Without `--output-dir`, the module file stays in the module directory:
 

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -372,11 +373,15 @@ def build(args: argparse.Namespace) -> ModuleReport:
     require(arch == {"aarch64": "arm64", "x86_64": "x86_64"}[args.arch],
             "build: KMI output architecture mismatch or missing .config")
     command = ["make", "-C", str(source), "O=" + str(output), "M=" + str(directory), "ARCH=" + str(arch), "LLVM=1", "KBUILD_GENDWARFKSYMS_STABLE=1", "KBUILD_MODPOST_WARN=1"]
-    if args.output_dir:
-        command.append("MO=" + str(module_output))
     log = module_output / (name + ".build.log")
     run_kbuild(command + ["clean"], env, log)
     run_kbuild(command + ["modules", f"-j{args.jobs}"], env, log, append=True)
+    if module_output != directory:
+        # Kernels before 6.13 have no MO=, so kbuild writes the module into the
+        # external module directory. Move the shipped bytes into the output
+        # directory and clean the intermediates: no artifact stays behind.
+        shutil.move(str(directory / (name + ".ko")), str(module))
+        run_kbuild(command + ["clean"], env, log, append=True)
     facts = verify_module(module, name, output, args.arch)
     build_info_path(module).write_text(json.dumps(build_info(output, module, identity, facts, revision), indent=2, sort_keys=True) + "\n")
     return {"module": name, "kmi": identity, "imports": facts["imports"]}
