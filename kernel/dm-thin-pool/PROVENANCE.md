@@ -1,16 +1,9 @@
-# Provenance of `modules/thin`
+# Provenance of `dm-thin-pool`
 
-This subtree is a **separate GPL-2.0-only kernel module** (`thin.ko`) vendored
-from the Linux kernel device-mapper thin-provisioning family and forked so it
-can be loaded as one out-of-tree module against the phone's exported KMI. It is
-aggregated with, never linked into, the GPL-3.0 maos core: the repository's
-top-level `LICENSE` (GPL-3.0) does not cover this subtree.
+This subtree provides a separate GPL-2.0-only kernel module. It contains vendored Linux device-mapper thin-provisioning sources, adapted to load as an out-of-tree module against the target KMI. The module remains separate from the GPL-3.0 maos core. The repository's top-level `LICENSE` does not cover this subtree.
 
-The historical throwaway proof workspace contained the source bundle, fork patch,
-build records and phone artifact from which this subtree was prepared. That
-workspace was proof material, not a product repository. The vendored dm-thin
-sources, private rename header and fork patch remain auditable here without
-depending on the original local workspace.
+The source bundle and phone artifact came from a local proof workspace. That workspace was not a product repository. The vendored sources, private rename header, and fork patch remain auditable here.
+
 
 ## 1. Origin
 
@@ -137,47 +130,15 @@ against the proof layout rather than applying onto this subtree as a plain
 151 unique undefined imports and a **PASS** on the forbidden-import list, i.e.
 none of the removed module-internal symbols remains an undefined symbol.
 
-## 4. Changes made when importing into maos
+## Module integration
 
-Only the build and metadata surface changed; the vendored `.c`/`.h` files and
-`private-rename.h` are byte-identical to the proven bundle.
+The vendored source and private rename header remain auditable in this subtree. Product integration adds the standalone module entry point, build files, and module metadata.
+The module builds as `dm-thin-pool.ko` and loads as `dm_thin_pool`. It registers the `thin-pool` and `thin` device-mapper targets. The private rename header prefixes non-exported symbols with `thinpool_private_`.
 
-- `bundle-main.c` → `thin-main.c`, and the Makefile's `obj-m` changed from
-  `thinpool-private.o` to `thin.o`, so the module file is `thin.ko` and loads as
-  `thin`. The ESP manifest `modules[].name` must therefore be `thin`.
-- `MODULE_DESCRIPTION` is now `maos thin provisioning targets (thin-pool, thin)`
-  and `MODULE_AUTHOR` is `maos` (the proven values were
-  `Private thin provisioning target bundle` / `thinpool-proof`). Both strings
-  take effect at the next module build; the currently deployed `.ko` binaries
-  were built from the previous source.
-- `MODULE_LICENSE` is `GPL v2` (the proven value was `GPL`): the vendored files
-  are `GPL-2.0-only`, and the GPL-3.0 core must not cover this subtree. The
-  vendored files keep their upstream `MODULE_LICENSE("GPL")` boilerplate exactly
-  as in the proven bundle, so a linked `thin.ko` carries several `.modinfo`
-  license strings; all of them are GPL-2-compatible, and the maos boundary
-  declaration is `thin-main.c`'s `GPL v2`.
-- `thin-main.c` exposes the read-only `ready` parameter
-  (`Y` only after all subsystems and both targets initialized, `N` again
-  as soon as unload teardown starts). Empty `__versions` scaffolding has been
-  removed: phone builds require genuine import/export CRCs from the exact
-  MODVERSIONS-enabled target output and the shared compatibility verifier.
-  The proven subsystem init order and every failure-unwind branch are unchanged.
-- `Makefile` is new: it keeps the proven object list, include paths
-  (`-I$(srctree)/drivers/md`, `-I$(src)/src`,
-  `-I$(src)/src/persistent-data`, `-include $(src)/private-rename.h`), builds
-  only out of tree from caller-provided `KMI_SRC`/`KMI_OUT` for android16-6.12 generation 6,
-  with `JOBS` capped at 13. The shared gate admits matching version CRCs and
-  non-versioned imports present in `System.map`.
-- `build.sh`, `README.md`, `PROVENANCE.md` and `LICENSE` are new.
-  `LICENSE` is the proof kernel tree's `LICENSES/preferred/GPL-2.0` file copied
-  byte for byte (SHA-256
-  `f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79`): its
-  `License-Text:` body is the full GNU GPL version 2 text, and the leading
-  `Valid-License-Identifier:` metadata lists the SPDX identifiers that refer to
-  that text. It is not a grant of "or later": this subtree is GPL-2.0-only
-  throughout.
+`thin-main.c` exposes the read-only `ready` parameter. It reports `Y` after all subsystems and both targets initialize. It returns to `N` when unload teardown starts. The module initializes and cleans up its vendored subsystems in order, including every failure path.
 
-## 5. Rebuilding
+The subtree is GPL-2.0-only. Its `LICENSE` file is the verbatim Linux kernel GPL-2.0 license text. Upstream source notices remain in vendored files.
 
-See `README.md` in this directory. A rebuilt `thin.ko` includes the current
-readiness interface.
+## Build and admission
+
+The standalone build uses explicit matching KMI source and output. The repository gate runs `scripts/kmi_modules.py` on the exact module artifact. Admission requires each import in the target KMI export list or target `System.map` with `CONFIG_KALLSYMS_ALL=y` for private imports. It checks the CRC of a present `module_layout` record against the published KMI CRC. It does not require matching CRCs for other imports. See the repository README for build commands.

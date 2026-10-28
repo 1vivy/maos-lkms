@@ -7,31 +7,16 @@ It requires the checked-out HEAD to equal the pin and rejects tracked changes
 before Kbuild compiles the module.
 The build checks the module against the configured kernel output.
 
-The source pin is `dfcc94b7c418e825a0904c2bb4f9a91193effa64`.
-ODP depends on the same revision as a git dependency for its firmware store.
-The pin documents every public item, denies missing docs, and uses edition 2024
-with Rust 1.88. It also carries the build interface change: `EFVS_ROOT` in
-`linux/Kbuild` and `EFVS_OUTPUT_DIR` in `linux/Makefile` let this repository
-include the upstream rules instead of a copy.
-The shared format, storage and FFI behaviour is unchanged from
-`483dc8b0b8bdc797fe79e0052ff2a161f70813ad`.
+The pinned revision is `dfcc94b7c418e825a0904c2bb4f9a91193effa64`. ODP uses the same revision for its firmware store. The source uses Rust edition 2024 and Rust 1.88. Its `EFVS_ROOT` and `EFVS_OUTPUT_DIR` settings let this repository include the pinned upstream Kbuild rules.
 
-`EFIVAR_STORE_REPO` can select a local clone.
-It does not change the recorded revision.
-The shared format, storage, FFI and CLI behaviour is identical to the previous pin
-`483dc8b0b8bdc797fe79e0052ff2a161f70813ad`; this module builds it with the
-pinned nightly, which is above the new Rust 1.88 source floor. A host check on
-2026-10-27 initialized an EFVS image with the CLI at `483dc8b`, wrote two
-variables, then listed and read them with the CLI at `dfcc94b` on the same file.
-The second CLI wrote a third variable and deleted the second, and the first CLI
-then listed and read the result. Both directions agree. See the ODP
-[EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared pin.
+`EFIVAR_STORE_REPO` may select a local clone, but the build requires the recorded revision. See the ODP [EFVS contract](https://github.com/1vivy/odp-platform-qcom/blob/main/docs/src/capabilities/efvs.md) for the shared format.
+
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
 export KMI_SRC=/path/to/android16-6.12/source
 export KMI_OUT=/path/to/matching/gki-out
-# Local integration before publication of the pin:
+# Optional local clone; the build requires SOURCE_REVISION.
 export EFIVAR_STORE_REPO=/path/to/efivar-store
 python3 scripts/kmi_modules.py build \
   --module-dir kernel/efivar_store --module efivar_store \
@@ -45,25 +30,20 @@ python3 scripts/kmi_modules.py verify --kmi-out "$KMI_OUT" \
 
 ## Design
 
-The module is a C kbuild module (`linux/efivar_store.c`) that links the audited
-allocation-free Rust EFVS engine as a freestanding `no_std` object through a small C
-ABI. It imports no Rust-mangled symbol and needs neither `CONFIG_RUST` nor the kernel's
-Rust crates. This is deliberate: the first backend, written against the kernel `rust`
-crates, was refused on the phone because the running GKI exports different `core`/`kernel`
-crate hashes and no `core::fmt::Formatter` methods (`20261008T055846Z-phone-efvs-lkm-test`).
-The Rust object is built offline with `nightly-2026-08-08`, `-Z build-std=core,compiler_builtins`
-for `aarch64-unknown-none-softfloat` and `panic=immediate-abort`; x86 uses the
-generated softfloat kernel target. C compilation and native-object linking use
-the repository's pinned DDK clang (`scripts/bootstrap-ddk-clang.sh`, or
-`DDK_CLANG_DIR`), as the other modules do. Rust emits
-no LLVM bitcode, so the former mixed-version bitcode-linking workaround is gone.
+The C Kbuild module (`linux/efivar_store.c`) links the allocation-free Rust
+EFVS engine as a freestanding `no_std` object through a small C ABI. It imports
+no Rust-mangled symbols and does not require `CONFIG_RUST` or kernel Rust crates.
+The Rust object uses pinned `nightly-2026-08-08` with
+`-Z build-std=core,compiler_builtins`. It targets aarch64 softfloat or the
+generated x86 kernel target. C compilation and native linking use the pinned
+DDK clang from `scripts/bootstrap-ddk-clang.sh` or `DDK_CLANG_DIR`.
 
-Where private imports are not kernel exports, use an ELF relocating loader;
-otherwise normal finit_module is sufficient. There is no core/root-runtime
-dependency. Load efivarfs, then efivar_store with an explicit selector, then mount
-filesystem type `efivarfs` at `/sys/firmware/efi/efivars` and verify a read.
-PolicyNone refuses authenticated enrollment; firmware alone formats blank storage and
-compacts. The VM harness and symbol inventory are in the pinned source's `docs/linux.md`.
+Private imports require an ELF relocating loader or real kernel exports.
+Load `efivarfs`, then `efivar_store` with an explicit selector. Mount `efivarfs`
+at `/sys/firmware/efi/efivars` and verify a read. `PolicyNone` refuses
+authenticated enrollment. Firmware owns blank-store initialization and
+compaction. The pinned source provides the VM harness and symbol inventory in
+`docs/linux.md`.
 
 ### Credentials
 
@@ -89,50 +69,24 @@ supports configured ACK/GKI/DDK and conventional DKMS packaging; all retain the
 same engine and opener-credential C glue. The product Kbuild in this directory
 sets `EFVS_ROOT` and includes that file. It copies no rule and no C source.
 
-This Kbuild derives x86 engine codegen from the actual kernel
-configuration. The pinned source's `linux/rust-target.py` generates a softfloat
-target with configured external retpoline/indirect-branch features and SLS
-hardening; Kbuild adds external return thunks, IBT/no jump tables, call padding,
-frame pointers and enabled CFI normalization. No CONFIG_RUST dependency or
-global mitigation disablement is introduced. The source pin includes the target
-generator, `linux/rustc-wrapper.py`, `linux/compiler-builtins.rs`, and credential
-changes. The freestanding build remains separate from host
-and firmware release profiles. The wrapper replaces only the designated
-compiler-runtime crate's source operand, retaining all target codegen flags and
-compatible configured sanitizer instrumentation/metadata. The descriptor has
-zero function definitions: emitted helpers must resolve to genuine kernel
-implementations through normal ELF/import/CRC admission. Unavailable helpers
-fail closed, without panic substitutes, no-op definitions, sanitizer ABI
-overrides or unresolved-symbol exemptions. Historic accepted ARM runtime
-definitions were limited to `bcmp`, `memcmp`, `memcpy`, `memmove`, `memset`;
-the configured x86 kernel exports all five with genuine CRCs. Each newly built
-module still requires actual compile/objtool/import admission. Custom targets
-retain `-Zjson-target-spec`.
-The x86 target explicitly enables direct PLT32 calls (`plt-by-default=true`);
-the bare-metal no-PLT default emitted GOTPCREL memory-helper calls that ACK
-cannot load. Admission now rejects unsupported allocated-section relocations,
-not only unresolved imports and CRC mismatches.
+The x86 engine target derives code generation from the kernel configuration.
+The pinned source generates a softfloat target with configured mitigation and
+CFI features. Kbuild adds the target's configured hardening flags. The build
+does not require `CONFIG_RUST` or disable kernel mitigations.
 
-The general builder streams complete compiler output to `<module>.build.log`
-and refuses admission for objtool diagnostics even when make returns zero.
-Private-import modpost warnings are not suppressed; their System.map/CRC checks
-remain mandatory. The source passed native Clang 7.2.8 and GCC 6.18.52 header
-builds with fatal modpost and no objtool diagnostics; ACK generation-6 builds
-passed on ARM and x86. ARM and corrected x86 backends passed VM PARTUUID success,
-missing/duplicate refusal, write/update/delete, reboot, compaction, torn-tail and
-blank-refusal checks through the production loader, including rejected-disk and
-partition-boundary byte comparisons. Enforcing Android credential acceptance is
-not established by those policy-free VMs.
-The actual DKMS 3.4.3 wrapper also built and signed the GCC 6.18.52 module in
-isolated unprivileged source/state/output trees. Quoting the leading `make`
-prevents DKMS from incorrectly injecting KERNELRELEASE into the outer wrapper.
-No system installation, key enrollment or host module loading was performed.
+Every emitted helper must resolve to a kernel implementation through
+ELF/import admission. The build provides no panic substitutes, no-op
+definitions, sanitizer ABI overrides, or unresolved-symbol exemptions.
+Custom targets retain `-Zjson-target-spec`. The x86 target uses direct PLT32
+calls. Admission rejects unsupported allocated-section relocations.
 
-## Historical device evidence (before this source pin)
+The builder records compiler output and refuses admission when objtool reports
+diagnostics, even if make exits successfully. Private imports must appear in
+the target `System.map` and require `CONFIG_KALLSYMS_ALL=y` for the configured
+loader's kallsyms resolver. A present `module_layout` version record must match
+its published KMI CRC. Other import CRCs are not compared. The host test and
+build commands are in the repository README.
 
-Loaded by hand on the real phone kernel in passthrough recovery, then exercised through
-efivarfs: firmware-written `Slot-rom1`/`MergeStatus-rom1`/`BootedRom` read back
-byte-identical, a probe variable was set, updated and deleted with the physical store
-parsing cleanly after each step, and the next firmware boot replayed and compacted the
-Linux-written records (`20261008T063318Z-phone-efvs-lkm-test`,
-`20261008T063449Z-phone-efvs-efivarfs-test`, `20261008T063532Z-phone-efvs-store-read`).
+Build and VM checks do not establish enforcing Android credential acceptance
+or physical-device behavior. Do not treat them as permission to load a module
+on a phone or block device.

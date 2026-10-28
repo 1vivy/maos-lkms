@@ -1,24 +1,10 @@
 # Provenance and licensing
 
-The ABI4 base of `configfs.c` and `target.c` is ported from the selected local
-`mockups/2026-10-09/partformer/kernel` source. The production port adds bounded
-four-field 512..4096 logical geometry uploads, target queue hints and composite
-geometry admission. `pp-range` follows upstream dm-linear (Sistina Software
-2001-2003); its provenance comment is retained. All source remains GPL-2.0-only.
-DM owns data BIO, queue and crypto stacking; the former standalone gendisk,
-private GPT-generation and crypto-profile implementation has been removed.
-ABI5 adds explicit physical namespace ancestry using upstream `device_move`;
-it does not add a disk driver or change the DM data path.
+The current `configfs.c` and `target.c` implement the configfs ABI 6 projection interface. Their base derives from the selected local `mockups/2026-10-09/partformer/kernel` source. Product changes add bounded geometry uploads, per-disk GPT metadata staging, device-mapper targets, and physical namespace ancestry through upstream `device_move`.
 
-The following records describe the retired standalone implementation and its
-historical verification only; they are retained as provenance, not current ABI
-instructions or evidence for ABI5.
+`pp-range` follows upstream dm-linear (Sistina Software 2001-2003); its provenance comment remains in source. Device-mapper owns data BIO, queue, and crypto stacking. This module does not provide a standalone gendisk, physical GPT writer, or crypto-profile engine.
 
-`gpt.c`, `gpt_uapi.h`, `Makefile` and the module documentation are newly authored
-for maos's single in-memory GPT projection contract. This is not a fork of a
-GPT rewriting module or a physical block-I/O firewall. All files in this subtree
-are GPL-2.0-only; `LICENSE` supplies the full GPL v2 text and fixes the license to
-version 2 only.
+The subtree is GPL-2.0-only. `LICENSE` supplies the full GPL v2 text. No binary, extracted firmware code, downstream patch, or third-party GPT module was imported.
 
 Public Linux v6.12 interfaces consulted during implementation:
 
@@ -37,12 +23,3 @@ Public Linux v6.12 interfaces consulted during implementation:
 - [drivers/block/brd.c](https://github.com/torvalds/linux/blob/v6.12/drivers/block/brd.c)
   — conventional bio-based disk operations and page mapping for RAM metadata.
 
-No binary, extracted firmware code, downstream patch or third-party GPT module
-was imported. The license document is the standard FSF GPL v2 text; it is a
-license-text copy, not imported implementation code.
-
-Repository validation has established exact Cuttlefish- and phone-kernel builds,
-phone import resolution against the exact `vmlinux`, and the disposable
-Cuttlefish runtime behavior listed in README. It has not established physical
-UFS hiding/restoration or wrapped-key inline-crypto behavior on the phone; those
-remain device-validation requirements.

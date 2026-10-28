@@ -1,16 +1,11 @@
 # Independent part-projection (configfs ABI 6)
 
-**Status (2026-10-12)** — Named virtual disks with shared endpoint protection.
-
 GPL-2.0-only. Artifact `part-projection.ko`, internal module name
 `part_projection`. Requires upstream device-mapper and configfs, not the Egysk
-helper or an EFI module. It registers `pp-range`, `pp-meta`, `pp-hole`; upstream
-DM owns the disk, data BIO splitting/completion, queue intersection and crypto.
-There is no standalone projection gendisk or data-copy/crypto-profile engine.
-Each virtual disk has its own GPT, queue geometry and crypto-capability
-intersection. File-backed image views must not share the disk carrying
-hardware-wrapped userdata. Endpoint pinning, physical-name hiding and sealing
-remain shared; no target invents capabilities missing from its backings.
+helper or an EFI module. It registers `pp-range`, `pp-meta`, and `pp-hole`.
+
+DM owns the disk, data BIO splitting and completion, queue intersection, and crypto. There is no standalone projection gendisk or data-copy/crypto-profile engine. Each virtual disk has its own GPT, queue geometry, and crypto-capability intersection. File-backed image views must not share the disk that carries hardware-wrapped userdata. Endpoint pinning, physical-name hiding, and sealing remain shared. No target invents capabilities that its backings lack.
+
 
 ## Configfs and geometry
 
@@ -20,7 +15,7 @@ Mount configfs independently. `/config/part-projection` exposes read-only `abi`
 possible reload backing. Create `disks/NAME` for each DM mapping; its `dev`,
 `anchor` and `metadata` belong to that disk. Unset dev/anchor read `none`.
 An anchor selects physical ancestry only, never endpoint access rights.
-The obsolete root dev/anchor/metadata attributes are absent.
+
 Each disk's metadata accepts bounded text writes, one complete record per write:
 
 ```text
@@ -83,28 +78,7 @@ There is no privileged unseal shortcut.
 
 ## Build and evidence
 
-Use the root exact-KMI producer and admit against its complete output (or the
-canonical digest-pinned DDK lane's own KMI ABI). Private DM/configfs imports
-are admitted against the target `System.map`/KMI export list and require the
-product's compatible prebinding loader (`egysk/modules/lkm-loader`) or real
-exports; namespace and KMI identity/`module_layout`-CRC gates remain
-mandatory, other `Module.symvers` CRCs are not compared (see `../../README.md`).
-ABI5 passed exact generation-6 admission on aarch64 and x86_64.
-The phone mounted projected `/metadata` and encrypted `/data` with stock init
-and reached `sys.boot_completed=1` in permissive mode
-(`20261010T232708Z-egysk-cutover`). Anchored multi-LUN sealing, reload and busy
-teardown/reset still require device qualification; host geometry tests do not
-establish those lifecycle properties.
+The root exact-KMI admission checks imports against the target `System.map` and KMI export list. Private imports require a compatible loader that prebinds them or real kernel exports. A present `module_layout` version record must match the published KMI CRC. Other `Module.symvers` CRCs are not compared. See the root README for admission and build commands.
 
-The flush correction passed both exact-KMI producer lanes and the 15 host
-admission tests. ROM2 capture `20261011T234852Z-900e-2` progressed from the prior
-metadata-key fsync failure to `dm-default-key` construction. It then hit the
-separate mixed-backing crypto-capability failure; this is not completed
-encrypted-ROM2 boot proof.
+Build and admission checks do not qualify phone behavior. They do not establish multi-disk busy teardown, reload, reset, enforcing policy, or physical-device safety. No physical GPT write is part of this module's contract.
 
-ABI6 passed exact generation-6 admission on both architectures. The first
-two-disk ROM2 attempt (`20261012T004701Z-900e-2`) exposed a 512-byte GPT edge
-sharing a 4 KiB cache page with an unreadable gap. `pp-hole` now zero-fills
-unencrypted reads without accepting writes or changing inactive-image errors.
-Phone qualification is tracked in `20261011T194912Z-phone-rom2-install`;
-host admission alone does not qualify multi-disk busy teardown or reload.
