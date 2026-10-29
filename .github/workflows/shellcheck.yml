@@ -2,10 +2,10 @@ name: LKM shell contracts
 on:
   push:
     branches: [main, dev]
-    paths: ['scripts/build-lkms.sh', 'scripts/build-ddk-lkms.sh', 'scripts/bootstrap-ddk-clang.sh', 'kernel/dm-thin-pool/build.sh', '.github/workflows/shellcheck.yml']
+    paths: ['scripts/build-lkms.sh', 'scripts/build-ddk-lkms.sh', 'scripts/bootstrap-ddk-clang.sh', 'scripts/ddk-targets.sh', 'scripts/out-dir.sh', 'kernel/dm-thin-pool/build.sh', '.github/workflows/shellcheck.yml']
   pull_request:
     branches: [main, dev]
-    paths: ['scripts/build-lkms.sh', 'scripts/build-ddk-lkms.sh', 'scripts/bootstrap-ddk-clang.sh', 'kernel/dm-thin-pool/build.sh', '.github/workflows/shellcheck.yml']
+    paths: ['scripts/build-lkms.sh', 'scripts/build-ddk-lkms.sh', 'scripts/bootstrap-ddk-clang.sh', 'scripts/ddk-targets.sh', 'scripts/out-dir.sh', 'kernel/dm-thin-pool/build.sh', '.github/workflows/shellcheck.yml']
 permissions:
   contents: read
 jobs:
@@ -14,4 +14,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check owned build entrypoints
-        run: shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh scripts/bootstrap-ddk-clang.sh kernel/dm-thin-pool/build.sh
+        run: shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh scripts/bootstrap-ddk-clang.sh scripts/ddk-targets.sh scripts/out-dir.sh kernel/dm-thin-pool/build.sh

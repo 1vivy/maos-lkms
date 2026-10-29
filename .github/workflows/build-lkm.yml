@@ -29,22 +29,37 @@ jobs:
         arch: [aarch64, x86_64]
     steps:
       - uses: actions/checkout@v7
-      - name: Bootstrap the pinned DDK clang
-        run: sh scripts/bootstrap-ddk-clang.sh
+      - name: Bootstrap the compiler selected by the ACK source
+        env:
+          OUT_DIR: out/build-matrix
+          BRANCH: ${{ inputs.branch }}
+          GENERATION: ${{ inputs.generation }}
+        run: sh scripts/bootstrap-ddk-clang.sh "$BRANCH" "$GENERATION"
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-08-08
           components: rust-src
       - name: Build and admit exact independent LKMs
         env:
+          OUT_DIR: out/build-matrix
           BRANCH: ${{ inputs.branch }}
           GENERATION: ${{ inputs.generation }}
           KMI_SRC: ${{ inputs.kmi_src }}
           KMI_OUT: ${{ matrix.arch == 'aarch64' && inputs.aarch64_out || inputs.x86_64_out }}
           KMI_ARCH: ${{ matrix.arch }}
         run: sh scripts/build-lkms.sh "$BRANCH" "$GENERATION" "$KMI_ARCH" "$KMI_SRC" "$KMI_OUT"
+      - name: Package admitted maOS bootstrap module candidate
+        env:
+          OUT_DIR: out/build-matrix
+          BRANCH: ${{ inputs.branch }}
+          GENERATION: ${{ inputs.generation }}
+          KMI_ARCH: ${{ matrix.arch }}
+        run: >-
+          python3 scripts/module_set.py package --release
+          --directory "$OUT_DIR/modules/$BRANCH-$GENERATION/$KMI_ARCH"
+          --out "$OUT_DIR/release/$BRANCH-$GENERATION/$KMI_ARCH"
       - uses: actions/upload-artifact@v7
         with:
-          name: maos-lkms-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}
-          path: out/
+          name: maos-lkms-candidate-${{ inputs.branch }}-${{ inputs.generation }}-${{ matrix.arch }}
+          path: out/build-matrix/release/${{ inputs.branch }}-${{ inputs.generation }}/
           if-no-files-found: error

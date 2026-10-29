@@ -15,25 +15,28 @@ Each module has its own Kbuild files and provenance. Shared code is in [`include
 
 ## Commands
 
-Run host contract tests:
+Run the host contract checks:
 
 ```sh
-python3 -m unittest scripts.test_kmi_modules
+python3 -m unittest scripts.test_kmi_modules scripts.test_module_set scripts.test_source_manifest
 ```
 
-Build and admit the canonical arm64 modules:
+Build one pinned DDK module or the full arm64 set:
 
 ```sh
-sh scripts/build-ddk-lkms.sh android16-6.12 6
+OUT_DIR=out/build-matrix-6.12 sh scripts/build-ddk-lkms.sh android16-6.12 6 dm-thin-pool
+OUT_DIR=out/build-matrix-6.12-full sh scripts/build-ddk-lkms.sh android16-6.12 6
 ```
 
-For a caller-supplied exact kernel source and output, use:
+The pinned targets are android14-6.1 generation 11, android16-6.12 generation 6, and android17-6.18 generation 5. The DDK lane builds arm64 only. Set `OUT_DIR` to a fresh child of `out/` to preserve existing outputs. Set `EFIVAR_STORE_REPO` to a local `efivar-store` checkout to reuse it; the DDK lane bind-mounts that checkout read-only. Set `STRIP_DEBUG=1` to strip only debug sections before admission and retain `.ko.debug` bytes.
+
+For matching caller-supplied kernel source and output, use:
 
 ```sh
-sh scripts/build-lkms.sh <branch> <generation> <aarch64|x86_64> <kernel-source> <complete-kernel-output>
+OUT_DIR=out/build-ack sh scripts/build-lkms.sh <branch> <generation> <aarch64|x86_64> <kernel-source> <complete-kernel-output> [module ...]
 ```
 
-See [build and KMI admission](docs/build.md) for prerequisites and build details. Do not load modules or write to a phone or block device.
+Build-and-admission-only candidates require all four modules. They are not device-qualified and are not published as GitHub releases. Add `--release` to the package command to include corresponding sources, licenses, notices, deterministic checksums, and a deterministic archive; the existing `egysk/kmod/` overlay remains. The archive records the unresolved GPL-2.0-only/Apache-2.0 review for `efivar_store`. See [build and KMI admission](docs/build.md) for prerequisites, candidate packaging, and verification commands. Never load modules or write to a phone or block device.
 
 ## Design documents
 

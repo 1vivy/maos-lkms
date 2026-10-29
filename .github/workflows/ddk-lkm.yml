@@ -22,10 +22,24 @@ jobs:
         with:
           toolchain: nightly-2026-08-08
           components: rust-src
-      - name: Build and admit the canonical arm64 lane
-        run: sh scripts/build-ddk-lkms.sh "${{ inputs.branch }}" "${{ inputs.generation }}"
+      - name: Build and admit the pinned arm64 target
+        env:
+          OUT_DIR: out/build-matrix
+          BRANCH: ${{ inputs.branch }}
+          GENERATION: ${{ inputs.generation }}
+        run: sh scripts/build-ddk-lkms.sh "$BRANCH" "$GENERATION"
+      - name: Package admitted maOS bootstrap module candidate
+        env:
+          OUT_DIR: out/build-matrix
+          BRANCH: ${{ inputs.branch }}
+          GENERATION: ${{ inputs.generation }}
+          KMI_ARCH: aarch64
+        run: >-
+          python3 scripts/module_set.py package --release
+          --directory "$OUT_DIR/modules/$BRANCH-$GENERATION/$KMI_ARCH"
+          --out "$OUT_DIR/release/$BRANCH-$GENERATION/$KMI_ARCH"
       - uses: actions/upload-artifact@v7
         with:
-          name: maos-lkms-ddk-${{ inputs.branch }}-${{ inputs.generation }}-aarch64
-          path: out/
+          name: maos-lkms-candidate-${{ inputs.branch }}-${{ inputs.generation }}-aarch64
+          path: out/build-matrix/release/${{ inputs.branch }}-${{ inputs.generation }}/
           if-no-files-found: error

@@ -9,17 +9,17 @@ on:
   workflow_dispatch:
     inputs:
       lane:
-        description: Caller-supplied exact ACK/GKI source+output, or the canonical digest-pinned DDK image
+        description: Caller-supplied exact ACK/GKI source and output, or a pinned DDK target from scripts/ddk-targets.sh
         required: true
         type: choice
         options: [ack, ddk]
       branch:
-        description: Exact ACK branch (for example android16-6.12)
+        description: Exact ACK branch, for example android14-6.1, android16-6.12, or android17-6.18
         required: true
         type: string
         default: android16-6.12
       generation:
-        description: Exact KMI generation
+        description: Exact KMI generation for the selected branch (11, 6, or 5 for the pinned targets)
         required: true
         type: number
         default: 6
@@ -42,8 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Exercise ELF, exact identity and build-info contracts
-        run: python3 -m unittest scripts.test_kmi_modules
+      - name: Exercise admission and candidate manifest contracts
+        run: python3 -m unittest scripts.test_kmi_modules scripts.test_module_set scripts.test_source_manifest
   ddk-arm64:
     # The canonical lane: push/PR and workflow_dispatch both exercise the
     # digest-pinned DDK image with no caller-supplied inputs.
