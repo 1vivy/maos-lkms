@@ -3,6 +3,8 @@
 *.mod
 *.mod.c
 *.cmd
+vars-guid.c
+vars-patched.c
 Module.symvers
 modules.order
 .btf.*

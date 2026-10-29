@@ -1,0 +1,11 @@
+--- a/fs/efivarfs/vars.c
++++ b/fs/efivarfs/vars.c
+@@ -610,7 +610,7 @@
+ 	err = __efivar_entry_get(entry, attributes, size, data);
+ 	efivar_unlock();
+ 
+-	return 0;
++	return err;
+ }
+ 
+ /**

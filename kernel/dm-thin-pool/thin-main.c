@@ -14,20 +14,10 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include "egysk_lkm.h"
+#include "subsystems.h"
 static bool ready;
 EGYSK_LKM_READY_PARAM(ready);
 EGYSK_LKM_METADATA("dm-thin-pool", "1", "1", "1");
-
-int thinpool_private_dm_io_init(void);
-void thinpool_private_dm_io_exit(void);
-int dm_kcopyd_init(void);
-void dm_kcopyd_exit(void);
-int thinpool_private_bufio_init(void);
-void thinpool_private_bufio_exit(void);
-int thinpool_private_prison_init(void);
-void thinpool_private_prison_exit(void);
-int thinpool_private_thin_init(void);
-void thinpool_private_thin_exit(void);
 
 static int __init thinpool_private_init(void)
 {

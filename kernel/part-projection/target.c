@@ -7,6 +7,7 @@
 #include <linux/bio.h>
 #include <linux/slab.h>
 #include "projection.h"
+#include "bdev.h"
 #include <linux/highmem.h>
 #include <linux/blk-crypto.h>
 struct pp_range { struct dm_dev *dev; sector_t offset; bool ro; };
@@ -30,7 +31,7 @@ static int range_ctr(struct dm_target *ti, unsigned int argc, char **argv)
  r = kzalloc(sizeof(*r), GFP_KERNEL);
  if (!r) return -ENOMEM;
  r->offset = offset; r->ro = !strcmp(argv[2], "ro");
- err = dm_get_device(ti, argv[0], r->ro ? BLK_OPEN_READ : dm_table_get_mode(ti->table), &r->dev);
+ err = dm_get_device(ti, argv[0], r->ro ? PP_OPEN_READ : dm_table_get_mode(ti->table), &r->dev);
  if (err) { kfree(r); return err; }
  ti->private = r;
  ti->num_flush_bios = 1;

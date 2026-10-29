@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# kernel/dm-thin-pool/prepare.py stages this module for a kernel line and ships
+# a stage.mk that selects the staged include directory. The in-repository build
+# reads the repository include directory.
+-include $(src)/stage.mk
+THINPOOL_INCLUDE_DIR ?= $(src)/../../include
 obj-m := dm-thin-pool.o
 dm-thin-pool-y := thin-main.o \
 	src/dm-io.o src/dm-kcopyd.o src/dm-bufio.o \
@@ -12,4 +17,4 @@ dm-thin-pool-y := thin-main.o \
 	src/persistent-data/dm-btree.o src/persistent-data/dm-btree-remove.o \
 	src/persistent-data/dm-btree-spine.o src/dm-thin-metadata.o src/dm-thin.o
 ccflags-y += -I$(srctree)/drivers/md -I$(src)/src -I$(src)/src/persistent-data
-ccflags-y += -I$(src)/../../include -include $(src)/private-rename.h
+ccflags-y += -I$(THINPOOL_INCLUDE_DIR) -include $(src)/private-rename.h

@@ -53,8 +53,8 @@ SHA-256 of the current source set (the vendored implementation set and
 includes the maos integration changes in section 4):
 
 ```
-3cb797bc4f4510ae71b7c37a5bfd198d7899cb9b465a777f5c83157886dc7178  thin-main.c
-83f7a2a3ee295c5d0c18e0cabb9d0900c14cde6ff7e3dc68b17897833835cf45  private-rename.h
+f96c6ebe943403a0e1dfc35c839ccc4ff5955e8c0d56e099df183b21828e3ab0  thin-main.c
+8bb7e68195ca466094fb3d64dc9282995dc543a289b6bc54dff1972e287362f9  private-rename.h
 d994221868e2f441e88888e377a7aba5836aba126d14ea82a734459095535275  src/dm-bio-prison-v1.c
 5cef7b5b636614a691d3782892977265a95f2b9090566e991a182cbebaac61f9  src/dm-bio-prison-v2.c
 6740f8e0c0f13b8026d6ba6b30465d170b9386eb56888cb37382d78e4aad478f  src/dm-bufio.c
@@ -87,6 +87,15 @@ c9d5c51933400d58bf36f57919e5022cc3d282a1d95d90f8b347983e78004758  src/persistent
 a316ee9bea9bda8e0b8901c3405e749fa4527f2a190da5668ef8ffc48a360e77  src/persistent-data/dm-space-map.h
 1480b1d373716f1fd890c7eaa2c0fab452017f20fb92536fc7d2b4eb3fa1f7a2  src/persistent-data/dm-transaction-manager.h
 ```
+
+`src/subsystems.h` is a project header, not imported source. It declares the
+subsystem init and exit entry points that `thin-main.c` calls. `thin-main.c`
+and the generated subsystem sources include it, so each definition has a prior
+prototype. Kernel 6.18 compiles modules with `-Wmissing-prototypes`, and its
+build rejects an undeclared global entry point.
+
+`thin-main.c` includes that header instead of repeating the ten declarations.
+It is otherwise the imported `bundle-main.c` with the maos changes of section 4.
 
 `patches/0001-fork-dm-thin-for-exported-KMI-surface.patch` is the proof
 workspace's patch file, byte for byte (SHA-256
@@ -121,14 +130,152 @@ against the proof layout rather than applying onto this subtree as a plain
   matching `dm_kcopyd_exit()` calls that the in-tree `dm-mod.c` performs for the
   `dm-io`, `dm-kcopyd` and `dm-bufio` subsystems, in the init order and in every
   failure-unwind branch and in exit.
-- `private-rename.h` renames every non-exported dm/persistent-data symbol in
-  the vendored copies to `thinpool_private_*`, so the module neither defines nor
-  overrides a kernel symbol. The device-mapper target names stay `thin-pool`
-  and `thin`, and the proven `thinpool_private_*` symbols are retained.
+- `private-rename.h` renames every dm/persistent-data symbol in the vendored
+  copies to `thinpool_private_*`, so the module neither defines nor overrides a
+  kernel symbol. The list also covers symbols the matching kernel exports; the
+  6.1 line exports `dm_bufio_release_move`, which the vendored 6.12 list did not
+  have. The device-mapper target names stay `thin-pool` and `thin`, and the
+  proven `thinpool_private_*` symbols are retained.
 
 `records/20260929T030000Z-stage6/record.md` records the resulting import audit:
 151 unique undefined imports and a **PASS** on the forbidden-import list, i.e.
 none of the removed module-internal symbols remains an undefined symbol.
+
+## Kernel-line porting
+
+The module serves more than one GKI kernel line only when each line contributes
+its own device-mapper sources. The dm-thin family changed between lines in its
+interfaces and in its data path. One snapshot cannot compile and behave
+correctly on all of them.
+
+`prepare.py` implements that rule:
+
+| Line | Device-mapper sources | Profile |
+| --- | --- | --- |
+| 6.1 | that line's kernel source, ported | generated |
+| 6.12 | section 2's vendored tree, byte for byte | verified |
+| 6.18 | that line's kernel source, ported | generated |
+
+For a generated line the tool copies
+`drivers/md/dm-thin.c`, `dm-thin-metadata.c`, `dm-thin-metadata.h`,
+`dm-bufio.c`, `dm-io.c`, `dm-kcopyd.c`, `dm-bio-prison-v1.c/.h`,
+`dm-bio-prison-v2.c/.h` and `drivers/md/persistent-data/*.c/*.h` from the
+matching source, then applies a fixed edit programme. The programme is more
+than a rename list:
+
+- The pool table is keyed by the control target's stable table name and by the
+  pool block device `dev_t`. The pool keeps its own name for diagnostics. The
+  thin target resolves the pool through that table instead of a mapped device.
+- The suspend path uses the private gate described in section 3. It does not
+  call `dm_internal_suspend_noflush()` or `dm_internal_resume()`. Suspend and
+  resume ordering, retained bios and postsuspend commit stay as the verified
+  tree defines them.
+- Kernel-internal helpers the module must not import are replaced: the pool and
+  thin mapped-device helpers, `dm_suspended()`, `dm_noflush_suspending()`,
+  `errno_to_blk_status()`, `wait_on_bit_io()`, `bit_wait_io()`,
+  `bio_kmalloc()`/dynamic `bio_init()`, `__dm_get_module_param()` and the
+  `KMEM_CACHE` slab names. The buffered I/O path allocates from a module-owned
+  `bio_set` that is created in the private bufio init and released in its exit,
+  including the workqueue failure path.
+- The composed module keeps exactly one `module_init`/`module_exit` pair in
+  `thin-main.c`. The subsystem files lose their own module hooks and expose
+  `thinpool_private_*` init and exit entry points. `src/subsystems.h` declares
+  those entry points once, and each defining source includes it, because 6.18
+  rejects a global definition without a prior prototype. The definitions stay
+  externally linked: the programme drops an upstream `static` from those
+  definitions, and it rejects a static `dm_io_init`/`dm_io_exit` or
+  `dm_kcopyd_init`/`dm_kcopyd_exit` that `thin-main.c` calls.
+- Every symbol the staged DM family exports needs a rename line in
+  `private-rename.h`. The tool reads each `EXPORT_SYMBOL` and `EXPORT_SYMBOL_GPL`
+  line in the staged sources and fails staging with the symbol and file when a
+  rename is absent. The matching kernel source decides the export set, and the
+  count is recorded in `PROVENANCE.json`. Kernel 6.1 exports
+  `dm_bufio_release_move`, which the 6.12 list did not cover.
+- The private errno-to-status helper follows each line's own `blk_errors[]`
+  table in `block/blk-core.c`. The 6.18 line has `BLK_STS_INVAL`, so -EINVAL
+  maps to it. The 6.1 line has no such status and maps -EINVAL to
+  `BLK_STS_IOERR`, as its own `errno_to_blk_status()` does. The programme
+  rejects a mapping that names a status the line lacks.
+- Both targets declare `DM_TARGET_PASSES_CRYPTO`, and `pool_ctr` rejects a pool
+  that does not set `skip_block_zeroing`. An encrypted thin pool must not write
+  zeroes below the encryption target, and a stacked device keeps its
+  inline-encryption capabilities only when every member target passes them.
+  Upstream 6.1 predates the flag, so its programme adds it. Upstream 6.18 has
+  the flag, so its programme asserts it. The 6.12 verified tree already has
+  both the flags and the zeroing policy.
+- `private-rename.h` still renames the private cross-file symbols. A generated
+  tree records which renames the line's sources do not use. A rename the
+  header lacks cannot be detected without a build, so modpost and KMI admission
+  remain the detection point for a new private symbol.
+
+Each edit must match exactly the number of times the programme declares. A
+kernel line that changed one of those regions fails staging with the file, the
+edit name and the anchor text. The tool accepts only the lines in the table
+above.
+
+### Inputs and recorded provenance
+
+`prepare.py` requires the exact ACK `--branch`, its `--generation`, the
+`--arch`, the matching `--kernel-source` and a complete `--kernel-output`
+(`.config`, `Module.symvers`, `System.map`, `include/generated/utsrelease.h`).
+It checks the following:
+
+- The branch line equals the source `Makefile` version line.
+- The output `UTS_RELEASE` is from that same line.
+- Every ACK identity declaration that exists matches the call. The 6.1 line
+  declares `BRANCH` in `build.config.constants` and generation 11 in
+  `build.config.common`. The 6.12 line declares branch and generation 6. The
+  6.18 line declares branch and generation 5 through a symlink to
+  `bazel/constants.scl`. Absence is recorded, never invented. The repository
+  `scripts/kmi_modules.py` reads the same files, so the same triple reaches
+  admission.
+- The `--output` path does not exist. The tool stages through a unique
+  temporary sibling and renames it on success. A failure removes only that
+  temporary directory.
+- The staged `src/*.c` set equals the `Kbuild` member list.
+- The staged tree copies each project header in `PROJECT_HEADERS`
+  (`src/subsystems.h`) from this module tree. Generated sources include it, and
+  the kernel source has no such file. Its hash appears in `module_inputs` and in
+  `files`.
+- The staged sources contain the required private tokens and none of the
+  replaced internals.
+- The staged `dm-thin.c` defines `thin-pool` and `thin` and records its version
+  triple.
+
+The staged `PROVENANCE.json` records the kernel source file hashes, the output
+file hashes, the module file hashes, every applied edit with its before and
+after anchor hashes, the replaced helper inventory, the private rename count
+and the target version triples.
+
+### Method source and licence
+
+The practice of a version-keyed kernel patch set per kernel line comes from
+Droidspaces, which documents per-line kernel configuration and patches at
+<https://www.droidspaces.org/docs/kernel-configuration.html>. That practice
+informed this design. No Droidspaces code is copied. Generated sources are
+Linux kernel sources from the matching line, under their own `GPL-2.0-only`
+notices.
+
+### Line differences and open limits
+
+- Crypto passthrough was reconciled from source, not assumed. The DDK 6.18 and
+  6.12 `dm-thin.c` files differ at the feature flags only, apart from version
+  bumps and two unrelated cleanups. The 6.1 `dm-table.c` calls
+  `dm_target_passes_crypto()` and intersects the stacked device's
+  inline-encryption capabilities to none when a member target lacks the flag.
+  The thin data path remaps through `bio_set_dev()` and keeps the per-bio crypt
+  context. The 6.1 programme therefore adds `DM_TARGET_PASSES_CRYPTO` to both
+  targets, which matches the OnePlus 6.12 vendor tree and upstream 6.18. The
+  encrypted 6.1 stack stays unproven until that lane runs the encryption
+  checks.
+- The 6.1 dm-bufio carries two Android vendor trace hook calls
+  (`trace_android_vh_dm_bufio_shrink_scan_bypass` and
+  `trace_android_vh_cleanup_old_buffers_bypass`). The DDK 6.1 image exports
+  those hooks, so the port keeps the vendor behavior.
+- No generated tree is built, admitted, loaded or exercised. Snapshots,
+  discard, ENOSPC, suspend/resume and metadata recovery behavior on 6.1 and
+  6.18 are unproven. A build and the KMI admission of the exact artifact are
+  the next required evidence.
 
 ## Module integration
 

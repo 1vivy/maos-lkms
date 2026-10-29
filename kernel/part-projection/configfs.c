@@ -8,6 +8,7 @@
 #include <linux/capability.h>
 #include <linux/overflow.h>
 #include "projection.h"
+#include "bdev.h"
 static DEFINE_MUTEX(lock);
 static bool active, sealed, failed;
 static struct configfs_subsystem subsystem;
@@ -102,7 +103,7 @@ struct endpoint {
  struct list_head entry;
  dev_t dev;
  bool hide, writable, pinned, hidden_changed;
- struct file *file, *whole;
+ pp_bdev_handle *file, *whole;
  char name[PARTITION_META_INFO_VOLNAMELTH];
 };
 struct ro_part { struct list_head entry; struct block_device *bdev; };
@@ -121,28 +122,28 @@ static bool writable_disk(struct gendisk *d)
 {
  struct endpoint *e;
  list_for_each_entry(e,&items,entry)
-  if (e->writable && file_bdev(e->file)->bd_disk == d) return true;
+  if (e->writable && pp_bdev(e->file)->bd_disk == d) return true;
  return false;
 }
 static bool writable_part(struct block_device *b)
 {
  struct endpoint *e;
  list_for_each_entry(e,&items,entry)
-  if (e->writable && file_bdev(e->file)==b) return true;
+  if (e->writable && pp_bdev(e->file)==b) return true;
  return false;
 }
 /* Namespace ancestry is independent of endpoint access and sealing policy. */
 static int prepare_anchor(struct projection_disk *d)
 {
- struct file *file;
+ pp_bdev_handle *file;
  struct gendisk *disk;
  struct projection_disk *other;
  struct device *parent, *ancestor;
  int err=0;
  if (!d->anchor) return 0;
- file=bdev_file_open_by_dev(d->anchor,BLK_OPEN_READ,NULL,NULL);
+ file=pp_bdev_open_ro(d->anchor);
  if (IS_ERR(file)) return PTR_ERR(file);
- disk=file_bdev(file)->bd_disk;
+ disk=pp_bdev(file)->bd_disk;
  parent=disk_to_dev(disk)->parent;
  if (!parent || !device_is_registered(parent)) { err=-EINVAL; goto out; }
  list_for_each_entry(other,&disk_items,entry) {
@@ -152,7 +153,7 @@ static int prepare_anchor(struct projection_disk *d)
  }
  d->anchor_parent=get_device(parent);
 out:
- bdev_fput(file);
+ pp_bdev_close(file);
  return err;
 }
 static void restore(void)
@@ -162,7 +163,7 @@ static void restore(void)
  struct ro_disk *d,*dn;
  struct projection_disk *disk;
  list_for_each_entry_safe(p,pn,&ro_parts,entry) {
-  bdev_clear_flag(p->bdev,BD_READ_ONLY); list_del(&p->entry);
+  pp_bdev_ro(p->bdev,false); list_del(&p->entry);
   put_device(&p->bdev->bd_device); kfree(p);
  }
  list_for_each_entry_safe(d,dn,&ro_disks,entry) {
@@ -170,14 +171,14 @@ static void restore(void)
  }
  list_for_each_entry(e,&items,entry) {
   if (e->file) {
-   struct block_device *b=file_bdev(e->file);
+   struct block_device *b=pp_bdev(e->file);
    if (e->hidden_changed && b->bd_meta_info) {
     memcpy(b->bd_meta_info->volname,e->name,sizeof(e->name));
     kobject_uevent(&b->bd_device.kobj,KOBJ_CHANGE);
     e->hidden_changed=false;
    }
-   if (e->whole) { bdev_fput(e->whole); e->whole=NULL; }
-   bdev_fput(e->file); e->file=NULL;
+   if (e->whole) { pp_bdev_close(e->whole); e->whole=NULL; }
+   pp_bdev_close(e->file); e->file=NULL;
   }
   if (e->pinned) { configfs_undepend_item(&e->item); e->pinned=false; }
  }
@@ -216,7 +217,7 @@ static int seal_disk(struct gendisk *disk)
   p=kmalloc(sizeof(*p),GFP_KERNEL);
   if (!p) { mutex_unlock(&disk->open_mutex); return -ENOMEM; }
   get_device(&b->bd_device);
-  p->bdev=b; list_add_tail(&p->entry,&ro_parts); bdev_set_flag(b,BD_READ_ONLY);
+  p->bdev=b; list_add_tail(&p->entry,&ro_parts); pp_bdev_ro(b,true);
  }
  mutex_unlock(&disk->open_mutex);
  return 0;
@@ -267,26 +268,26 @@ static int commit(bool seal)
   err=configfs_depend_item_unlocked(&subsystem,&e->item);
   if (err) goto fail;
   e->pinned=true;
-  e->file=bdev_file_open_by_dev(e->dev,BLK_OPEN_READ,NULL,NULL);
+  e->file=pp_bdev_open_ro(e->dev);
   if (IS_ERR(e->file)) { err=PTR_ERR(e->file); e->file=NULL; goto fail; }
-  if (e->hide && (!bdev_is_partition(file_bdev(e->file)) || !file_bdev(e->file)->bd_meta_info)) {
+  if (e->hide && (!bdev_is_partition(pp_bdev(e->file)) || !pp_bdev(e->file)->bd_meta_info)) {
    err=-EINVAL; goto fail;
   }
-  e->whole=bdev_file_open_by_dev(disk_devt(file_bdev(e->file)->bd_disk),BLK_OPEN_READ,NULL,NULL);
+  e->whole=pp_bdev_open_ro(disk_devt(pp_bdev(e->file)->bd_disk));
   if (IS_ERR(e->whole)) { err=PTR_ERR(e->whole); e->whole=NULL; goto fail; }
-  if (e->hide) memcpy(e->name,file_bdev(e->file)->bd_meta_info->volname,sizeof(e->name));
+  if (e->hide) memcpy(e->name,pp_bdev(e->file)->bd_meta_info->volname,sizeof(e->name));
  }
  list_for_each_entry(d,&disk_items,entry) {
   err=prepare_anchor(d); if (err) goto fail;
  }
  /* All validation and references precede shared namespace mutation. */
  if (seal) list_for_each_entry(e,&items,entry) {
-  err=seal_disk(file_bdev(e->file)->bd_disk); if (err) goto fail;
+  err=seal_disk(pp_bdev(e->file)->bd_disk); if (err) goto fail;
  }
  list_for_each_entry(e,&items,entry) if (e->hide) {
-  file_bdev(e->file)->bd_meta_info->volname[0]=0;
+  pp_bdev(e->file)->bd_meta_info->volname[0]=0;
   e->hidden_changed=true;
-  kobject_uevent(&file_bdev(e->file)->bd_device.kobj,KOBJ_CHANGE);
+  kobject_uevent(&pp_bdev(e->file)->bd_device.kobj,KOBJ_CHANGE);
  }
  list_for_each_entry(d,&disk_items,entry) {
   if (!d->anchor_parent) continue;
