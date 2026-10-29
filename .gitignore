@@ -10,7 +10,7 @@ __pycache__
 /dist
 *.ko.build.json
 /.worktrees/
-/kernel/efivarfs/vars-patched.c
-/kernel/efivar_store/.source/
-/kernel/efivar_store/efvs-*.json
+# Leftover root-owned nested engine checkout from the removed efivar_store
+# module. It is not a build input. Remove it locally with the owner's rights.
+/kernel/efivar_store/
 /kernel/*/*.build.log

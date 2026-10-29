@@ -216,8 +216,8 @@ class KmiModuleCompatibility(unittest.TestCase):
         identity = {"branch": "android16-6.12", "generation": 6}
         self.module.write_bytes(module_file(imports=("known", "private")))
         facts = compat.verify_module(self.module, "gpt", self.output, "aarch64")
-        info = compat.build_info(self.output, self.module, identity, facts, "0" * 40)
-        self.assertEqual(set(info), {"schema_version", "kmi", "kmi_out_inputs", "module_sha256", "imports", "modinfo", "source_revision"})
+        info = compat.build_info(self.output, self.module, identity, facts)
+        self.assertEqual(set(info), {"schema_version", "kmi", "kmi_out_inputs", "module_sha256", "imports", "modinfo"})
         self.assertEqual(info["schema_version"], 2)
         self.assertEqual(info["kmi_out_inputs"], {
             "Module.symvers": compat.digest(self.output / "Module.symvers"),
@@ -226,9 +226,6 @@ class KmiModuleCompatibility(unittest.TestCase):
         self.assertEqual(info["module_sha256"], compat.digest(self.module))
         self.assertEqual(info["imports"], {"versioned": 2, "kallsyms": ["known", "private"]})
         self.assertEqual(info["modinfo"], {"name": "gpt", "vermagic": VERMAGIC})
-        self.assertEqual(info["source_revision"], "0" * 40)
-        unpinned = compat.build_info(self.output, self.module, identity, facts, None)
-        self.assertEqual(set(unpinned), set(info) - {"source_revision"})
         self.assertEqual(compat.build_info_path(self.module).name, "gpt.ko.build.json")
 
     def test_build_info_records_the_abi_input_when_given(self):
@@ -236,11 +233,11 @@ class KmiModuleCompatibility(unittest.TestCase):
         abi.write_text(abi_text((("module_layout", 0x797f2b3e),)))
         self.module.write_bytes(module_file(versions=b""))
         facts = compat.verify_module(self.module, "gpt", self.output, "aarch64", abi)
-        info = compat.build_info(self.output, self.module, {"branch": "android16-6.12", "generation": 6}, facts, None, abi)
+        info = compat.build_info(self.output, self.module, {"branch": "android16-6.12", "generation": 6}, facts, abi)
         self.assertEqual(info["kmi_abi"], {"abi.stg": compat.digest(abi)})
 
     def test_verify_payload_admits_modules_and_writes_nothing(self):
-        """The standalone check works from the module plus --kmi-out alone."""
+        """The independent check works from the module plus --kmi-out alone."""
         (self.output / ".config").write_text("CONFIG_ARM64=y\nCONFIG_KALLSYMS_ALL=y\n")
         self.module.write_bytes(module_file(imports=("known", "private")))
         report = {"module": "gpt", "kmi": {"branch": "android16-6.12", "generation": 6},

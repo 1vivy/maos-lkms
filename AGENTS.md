@@ -10,7 +10,7 @@ Use the shared `asd-ste100` skill for documentation and the shared `engineering-
 - Pinned clang bootstrap for the caller-supplied lane: `sh scripts/bootstrap-ddk-clang.sh`
 - Owned shell entrypoint check: `shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh scripts/bootstrap-ddk-clang.sh kernel/dm-thin-pool/build.sh`
 
-The canonical lane needs Docker and the pinned Rust nightly with `rust-src`. The caller-supplied lane also needs complete matching kernel source and output, the pinned DDK clang, and the same Rust prerequisites. See the root README for required output files and inputs. Generated files belong under ignored `out/`.
+The canonical lane needs Docker. The caller-supplied lane also needs complete matching kernel source and output and the pinned DDK clang. See the root README for required output files and inputs. Generated files belong under ignored `out/`.
 
 Never load modules or write to a phone, physical disk, partition, or block device. Do not run deployment or device commands as a documentation/build check. Report host, build, VM, and physical-device evidence as separate claims.
 

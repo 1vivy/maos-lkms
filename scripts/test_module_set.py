@@ -10,6 +10,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from . import module_set
+from . import source_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 KMI = {"branch": "android16-6.12", "generation": 6}
@@ -31,7 +32,8 @@ class ModuleSetTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def create_modules(self, names: tuple[str, ...], include_thin_provenance: bool = False) -> dict[str, bytes]:
+    def create_modules(self, names: tuple[str, ...], include_thin_provenance: bool = False,
+                       source_evidence: dict[str, dict[str, dict[str, str]]] | None = None) -> dict[str, bytes]:
         payloads = {}
         for name in names:
             module_dir = self.directory / name
@@ -41,6 +43,8 @@ class ModuleSetTests(unittest.TestCase):
             (module_dir / f"{name}.ko").write_bytes(payload)
             info = {"kmi": KMI, "module_sha256": digest(payload),
                     "compiler": {"sha256": "c" * 64}}
+            if source_evidence is not None:
+                info["source_evidence"] = source_evidence[name]
             if name == "dm-thin-pool" and include_thin_provenance:
                 provenance = {"module": name, "profile": "verified",
                               "kmi": {**KMI, "arch": ARCH},
@@ -54,6 +58,19 @@ class ModuleSetTests(unittest.TestCase):
                                              "kernel_release": "6.12.76-test"}
             (module_dir / f"{name}.ko.build.json").write_text(json.dumps(info, sort_keys=True) + "\n")
         return payloads
+
+    def create_source_evidence(self, names: tuple[str, ...]) -> dict[str, dict[str, dict[str, str]]]:
+        include = source_manifest.inventory(ROOT / "include")
+        tools = source_manifest.inventory(ROOT / "scripts")
+        evidence = {}
+        for name in names:
+            tree = self.root / "prepared" / "android16-6.12-6" / ARCH / name
+            tree.mkdir(parents=True)
+            (tree / "Kbuild").write_text(f"obj-m := {name}.o\n")
+            (tree / f"{name}.c").write_text("int x;\n")
+            evidence[name] = {"module": source_manifest.inventory(tree),
+                              "include": include, "tools": tools}
+        return evidence
 
     def record(self, names: tuple[str, ...], failed: str = "") -> int:
         return module_set.record(Namespace(directory=self.directory, requested=",".join(names),
@@ -123,6 +140,45 @@ class ModuleSetTests(unittest.TestCase):
                 "maos-lkms-test/egysk/kmod/gpt.ko",
                 "maos-lkms-test/manifest.json",
             ])
+
+    def test_release_packages_both_gpl_modules_without_efvs_notice(self) -> None:
+        evidence = self.create_source_evidence(module_set.REQUIRED)
+        payloads = self.create_modules(module_set.REQUIRED, source_evidence=evidence)
+        self.assertEqual(self.record(module_set.REQUIRED), 0)
+        out = self.root / "release" / "release-candidate"
+        self.assertEqual(module_set.package(Namespace(directory=self.directory, out=out, release=True)), 0)
+        notice = (out / "SOURCE-NOTICE.md").read_text()
+        self.assertIn("`dm-thin-pool` and `part-projection` are distributed under GPL-2.0-only", notice)
+        self.assertNotIn("Apache", notice)
+        self.assertNotIn("efivar", notice)
+        self.assertTrue((out / "LICENSES/GPL-2.0-only.txt").is_file())
+        self.assertFalse((out / "LICENSES/Apache-2.0.txt").exists())
+        self.assertEqual(sorted(path.name for path in (out / "sources/kernel").iterdir()),
+                         ["dm-thin-pool", "part-projection"])
+        manifest = json.loads((out / "manifest.json").read_text())
+        self.assertNotIn("license_review", manifest)
+        for name, payload in payloads.items():
+            self.assertEqual((out / "egysk/kmod" / f"{name}.ko").read_bytes(), payload)
+        with tarfile.open(out.with_name(out.name + ".tar.gz"), "r:gz") as archive:
+            names = archive.getnames()
+        self.assertIn("maos-lkms-android16-6.12-6-aarch64/sources/kernel/part-projection/Kbuild", names)
+
+    def test_retired_module_requests_are_refused(self) -> None:
+        self.directory.mkdir(parents=True)
+        for requested in ("efivarfs", "dm-thin-pool,efivar_store"):
+            with self.subTest(requested=requested), self.assertRaisesRegex(ValueError, "required module set"):
+                self.record(tuple(requested.split(",")))
+
+    def test_candidate_listing_a_retired_module_is_refused(self) -> None:
+        self.create_modules(module_set.REQUIRED)
+        self.assertEqual(self.record(module_set.REQUIRED), 0)
+        manifest = json.loads((self.directory / "set.json").read_text())
+        manifest["modules"].append({"name": "efivar_store", "status": "accepted",
+                                    "module_sha256": None, "build_info_sha256": None})
+        (self.directory / "set.json").write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "admitted maOS module set"):
+            module_set.package(Namespace(directory=self.directory,
+                                         out=self.root / "release" / "forged"))
 
     def test_output_paths_outside_ignored_tree_are_refused(self) -> None:
         with tempfile.TemporaryDirectory(prefix="module-set-outside-") as outside:

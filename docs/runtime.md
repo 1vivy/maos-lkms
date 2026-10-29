@@ -21,24 +21,23 @@ Reset refuses while any publication is live, registered, or open. It refuses
 even if userspace already removed another disk. Userspace must reread every GPT.
 See the [part-projection ABI](../kernel/part-projection/README.md).
 
-## EFI variables
+The module reports the kernel-line port it was compiled with as the
+`part_projection_bdev_abi` `.modinfo` entry (`5.15`, `6.1`, `6.6`, `6.12`, or
+`6.18`). A consumer can read it with `modinfo`. It describes the build, not the
+running kernel.
 
-Mount filesystem type `efivarfs` at `/sys/firmware/efi/efivars`. A successful
-mount and read establish frontend readiness. Directory presence alone does not.
+## dm-thin-pool
 
-The backend accepts one selector: `partuuid=<unique-GPT-UUID>`,
-`dev=<major>:<minor>`, or `/chosen/efivar-store,partuuid`. Do not substitute a
-label or fixed unique GUID. Linux refuses blank stores without writing.
-Firmware owns store initialization and compaction.
+`dm-thin-pool` registers the `thin-pool` and `thin` device-mapper targets under
+its private symbol names. Consumers create these targets through normal
+device-mapper tables.
 
-## Backing-file credentials
-
-Backing-file reads, writes, fsync, and final `fput` use the retained opener
-credentials through `override_creds` and `revert_creds`. Load before Android
-policy. Permit the opener domain to access the backing block device. UID 0 alone
-does not grant SELinux access.
-
-The backend uses no ESP credential or provider ABI. It removes only EFI sysfs
-objects that it created. It does not remove native EFI objects.
-
+The module exposes two read-only parameters under the kernel's standard module
+parameter path. `ready` reads `Y` only after every subsystem and both
+device-mapper targets initialize. It reads `N` before the first initialization
+step and as soon as unload teardown starts. The maos PID 1 self-check uses this
+value. `private_names` defaults to `N`. With `private_names=1` at load, the
+targets register as `thin-private` and `thin-pool-private` instead of the
+upstream names. See the [dm-thin-pool interface](../kernel/dm-thin-pool/README.md)
+for target parameters and the metadata layout.
 

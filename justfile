@@ -9,7 +9,7 @@ build module branch generation arch kmi_src kmi_out jobs="4":
 verify artifact branch generation arch kmi_out:
     python3 scripts/kmi_modules.py verify --module "{{artifact}}" --branch "{{branch}}" --generation "{{generation}}" --arch "{{arch}}" --kmi-out "{{kmi_out}}"
 
-# Build all four product modules and the standalone efivar_store path.
+# Build the complete two-module product set.
 gate branch generation arch kmi_src kmi_out:
     sh scripts/build-lkms.sh "{{branch}}" "{{generation}}" "{{arch}}" "{{kmi_src}}" "{{kmi_out}}"
 

@@ -8,30 +8,36 @@ This document describes pinned build targets, caller-supplied builds, admission,
 
 | Branch | Generation | Image digest | Compiler | ABI dump |
 | --- | ---: | --- | --- | --- |
+| `android13-5.15` | 8 | `9e68cd9fcab748584755d31ba88ef134efc938dbde17f258c2652315f6cd81cd` | `clang-r450784e` | No published `abi.stg` |
 | `android14-6.1` | 11 | `1dd6ac340b627a90a4031d6d0df6b129d8cc949b139fb56032c898f023d3d5d3` | `clang-r487747c` | No published `abi.stg` |
+| `android15-6.6` | 8 | `51159bc935c75a282fc65bc87e02f16bd098d1cdf55dc558c4fdd0fcf7a132e2` | `clang-r510928` | No published `abi.stg` |
 | `android16-6.12` | 6 | `fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee` | `clang-r536225` | `gki/aarch64/abi.stg` |
 | `android17-6.18` | 5 | `fb8b66200bf402cf65a751060fc1aa29524b9fa8840feef16c7b196a4f3f0e6e` | `clang-r584948c` | `gki/aarch64/abi.stg` |
 
+The generation number is the value the pinned source declares: 5.15, 6.1 and 6.6 declare it in `build.config.common` (8, 11 and 8), and 6.12 and 6.18 declare it in `build.config.constants` (6 and 5, the latter through its `bazel/constants.scl` symlink). The 5.15 and 6.6 digests come from the community manifest at `Shikochin/Droidspaces-LKM` `build/gki-targets.json` revision `8c14b35`. Their kernel versions are 5.15.202 and 6.6.127.
+
 The 6.18 image also contains an x86_64 ABI dump. Its prepared DDK output is arm64, so the canonical DDK lane does not build x86_64 modules. Use caller-supplied matching output for x86_64.
 
-The 6.1 image has no published ABI dump. Admission therefore uses that image's `Module.symvers` and `System.map`. A module-layout CRC from that output does not establish compatibility with another kernel. The image and its compiler are build inputs, not a device-support claim. The same rule applies to the other targets: no target is device-qualified by this build tooling.
+The 5.15, 6.1 and 6.6 images have no published ABI dump. Admission therefore uses that image's `Module.symvers` and `System.map`. A module-layout CRC from that output does not establish compatibility with another kernel. The image and its compiler are build inputs, not a device-support claim. The same rule applies to the other targets: no target is device-qualified by this build tooling.
 
-These rows identify pinned inputs. They do not record completed builds. The 6.1 target does not currently have a complete module set for candidate packaging because `efivar_store` needs a backend adaptation and other module ports remain in progress. A per-module build may still report an admitted result for an individual module.
+These rows identify pinned inputs. They do not record completed builds. A per-module build can report an admitted result for an individual module. Candidate packaging needs both modules for the same branch, generation, and architecture.
 
 Build one module or the complete arm64 set:
 
 ```sh
 OUT_DIR=out/build-matrix-6.12-dm sh scripts/build-ddk-lkms.sh android16-6.12 6 dm-thin-pool
 OUT_DIR=out/build-matrix-6.12 sh scripts/build-ddk-lkms.sh android16-6.12 6
+OUT_DIR=out/build-matrix-5.15 sh scripts/build-ddk-lkms.sh android13-5.15 8
 OUT_DIR=out/build-matrix-6.1 sh scripts/build-ddk-lkms.sh android14-6.1 11
+OUT_DIR=out/build-matrix-6.6 sh scripts/build-ddk-lkms.sh android15-6.6 8
 OUT_DIR=out/build-matrix-6.18 sh scripts/build-ddk-lkms.sh android17-6.18 5
 ```
 
-The canonical lane runs Kbuild inside the selected image. The image has absolute source and output paths under `/opt/ddk`, so the script does not extract or copy the kernel tree. Docker pulls the pinned digest only when it is not present locally. The container has no privileged mode. It mounts the repository and the configured Cargo and Rustup homes. It does not load a module or access a device. The lane records the image digest, compiler, and ABI hash in `OUT_DIR/ddk/kmi-ddk-<branch>-<generation>.json`.
+The canonical lane runs Kbuild inside the selected image. The image has absolute source and output paths under `/opt/ddk`, so the script does not extract or copy the kernel tree. Docker pulls the pinned digest only when it is not present locally. The container has no privileged mode. It mounts only this repository at the same absolute path. It does not load a module or access a device. The lane records the image digest, compiler, and ABI hash in `OUT_DIR/ddk/kmi-ddk-<branch>-<generation>.json`.
 
-The build needs Docker and pinned Rust `nightly-2026-08-08` with `rust-src` for `efivar_store`. `CARGO_HOME` and `RUSTUP_HOME` may select other installed toolchain directories. The DDK container runs with the invoking UID and GID, mounts those directories at `/cargo` and `/rustup`, sets `HOME=/tmp`, and uses `/cargo/bin/cargo` and `/cargo/bin/rustc`. The image supplies the compiler and matching kernel source and output.
+The build needs Docker. The image supplies the compiler and matching kernel source and output. The DDK container runs with the invoking UID and GID and sets `HOME=/tmp`.
 
-`EFIVAR_STORE_REPO` may name the local `efivar-store` checkout. The DDK lane bind-mounts that checkout read-only at `/opt/maos/efivar-store` and passes the stable path to the build. The caller-supplied lane uses the local checkout directly. A reused checkout must be at the pinned `SOURCE_REVISION` with no tracked or untracked modifications; the build does not fetch or check out another revision in that tree. The standalone efivar_store Kbuild uses a small writable copy under `OUT_DIR/sources/`. A non-local `EFIVAR_STORE_REPO` URL is passed through and materialized under `OUT_DIR/sources/`. The build sets `EFVS_RUSTC` from the selected Cargo directory, so a kernel Kbuild cache cannot redirect it to `./rustc`.
+The canonical lane mounts only the repository, so both modules build from this checkout and the pinned image. The build does not clone or reuse any other repository.
 
 The clang bootstrap extracts only the selected compiler files, not the kernel image or source tree:
 
@@ -41,11 +47,22 @@ OUT_DIR=out/build-matrix-6.18 sh scripts/bootstrap-ddk-clang.sh android17-6.18 5
 
 The bootstrap accepts only targets in the pinned table. It records the image digest, compiler version, and executable hashes under `OUT_DIR/ddk/clang/`. `build-lkms.sh` reads `CLANG_VERSION` from the matching kernel source and refuses a compiler whose version line does not match it. `DDK_CLANG_DIR` can select a compiler directory, but the same version check still applies.
 
+## Kernel-line ports
+
+Both modules support the five pinned lines and keep the line interfaces out of the shared functional core.
+
+| Module | Per-line inputs | Shared core |
+| --- | --- | --- |
+| `dm-thin-pool` | `abi/<line>/port.py` applies the line's own source edits (bio, crypto, errno and status mapping). `abi/6.12/port.py` records the verified branch that selects the vendored tree. | `prepare.py` validation, staging, shared transformations, and provenance |
+| `part-projection` | `abi/<line>/bdev.h` owns the open, close, handle type, read-only mechanism and open count. `abi/file-bdev.h` holds the file-based implementation that 6.12 and 6.18 share. | `configfs.c`, `target.c` |
+
+`prepare.py` selects the port from the kernel line of the supplied source. `part-projection/bdev.h` selects the port from `LINUX_VERSION_CODE` of the build and stops with an error on a line that has no port. A line port is never used for a different line. `PROVENANCE.json` for `dm-thin-pool` and the `.modinfo` entry `part_projection_bdev_abi` name the port that produced a build.
+
 ## Output isolation and build selection
 
 `OUT_DIR` must resolve to a directory inside this repository's ignored `out/` tree. The default is `out/build-matrix`. Use a fresh child for each build attempt to preserve existing outputs. Build scripts refuse existing set records, requested module directories, and compiler records rather than replace them.
 
-The scripts stage each module under `OUT_DIR` before Kbuild. Unchanged module directories are copied to `OUT_DIR/module-src/`, with prior build objects and the EFVS source checkout excluded. `efivar_store` materializes its pinned source under `OUT_DIR/sources/efivar_store/`. When the module tree provides `prepare.py`, the prepared directory under `OUT_DIR/prepared/` is the build source. Kbuild and source preparation do not write into the checked-out module directories.
+The scripts stage each module under `OUT_DIR` before Kbuild. Unchanged module directories are copied to `OUT_DIR/module-src/`, with prior build objects excluded. When the module tree provides `prepare.py`, the prepared directory under `OUT_DIR/prepared/` is the build source. Kbuild and source preparation do not write into the checked-out module directories.
 
 For caller-supplied exact source and output, use:
 
@@ -67,7 +84,7 @@ Supported architecture names are `aarch64` and `x86_64`. The output tree must co
 
 Caller-supplied builds use `Module.symvers` unless `KMI_ABI` names the published ABI dump for the same branch, generation, and architecture. Do not use an ABI dump from another target. The pinned DDK lane selects its mapped ABI automatically when the image provides one.
 
-A one-module request builds and admits that module. It writes `set.json` with `complete: false`. A full-set request builds `dm-thin-pool`, `part-projection`, `efivarfs`, and `efivar_store`. The standalone `efivar_store` build follows only after all four product modules succeed. The script continues after a module failure, records each result, and exits nonzero if any requested module fails. `complete` is true only when all four modules have admitted final bytes. The manifest hashes the final `.ko` and its build metadata. The script does not strip or rewrite an admitted module unless `STRIP_DEBUG=1` is set.
+A one-module request builds and admits that module. It writes `set.json` with `complete: false`. A full-set request builds `dm-thin-pool` and `part-projection`. The script continues after a module failure, records each result, and exits nonzero if any requested module fails. `complete` is true only when both modules have admitted final bytes. The manifest hashes the final `.ko` and its build metadata. The script does not strip or rewrite an admitted module unless `STRIP_DEBUG=1` is set.
 
 `STRIP_DEBUG=1` runs the matching `llvm-strip --strip-debug` before final admission and hashing. It removes debug sections only. The original bytes remain in `<module>.ko.debug`, whose hash is recorded in the build metadata. The option refuses a module with a module-signature section or appended signature. The default is off.
 
@@ -77,16 +94,15 @@ Build outputs use these paths:
 OUT_DIR/modules/<branch>-<generation>/<arch>/<module>/<module>.ko
 OUT_DIR/modules/<branch>-<generation>/<arch>/<module>/<module>.ko.build.json
 OUT_DIR/modules/<branch>-<generation>/<arch>/set.json
-OUT_DIR/standalone/<branch>-<generation>/<arch>/efivar_store/  # full-set command
 ```
 
-The build metadata records the KMI, source revision when pinned, compiler version and hash, kernel-input hashes, module hash, imports, and `.modinfo` name and vermagic. For a staged module with `PROVENANCE.json`, it records that file's hash, profile, and kernel release. It also records canonical SHA-256 inventories for the staged module source, shared include, build tools, and, for `efivar_store`, the EFVS source. The build verifies those inventories after compilation. `set.json` records completeness and final-byte hashes. These records do not prove successful runtime loading.
+The build metadata records the KMI, compiler version and hash, kernel-input hashes, module hash, imports, and `.modinfo` name and vermagic. For a staged module with `PROVENANCE.json`, it records that file's hash, profile, and kernel release. It also records canonical SHA-256 inventories for the staged module source, shared include, and build tools. The build verifies those inventories after compilation. `set.json` records completeness and final-byte hashes. These records do not prove successful runtime loading.
 
-The source inventory is captured after the initial Kbuild clean and before compilation. Generated objects, logs, caches, `.git`, and build-output directories are excluded. A changed, added, deleted, or symlinked source input fails the build or release. Old build metadata without source evidence is refused by `package --release` and requires a rebuild. The standalone `efivar_store` lane records the materialized checkout root, not the wrapper directory, as its EFVS source evidence.
+The source inventory is captured after the initial Kbuild clean and before compilation. Generated objects, logs, caches, `.git`, and build-output directories are excluded. A changed, added, deleted, or symlinked source input fails the build or release. Old build metadata without source evidence is refused by `package --release` and requires a rebuild.
 
 ## Build-only candidate bundle
 
-The workflows create a candidate bundle only after the full build command succeeds. `scripts/module_set.py package` also checks that the set manifest lists all four admitted modules, that each metadata record matches the exact module bytes and KMI, and that each record has compiler provenance. It refuses a partial set and an existing output directory.
+The workflows create a candidate bundle only after the full build command succeeds. `scripts/module_set.py package` also checks that the set manifest lists both admitted modules, that each metadata record matches the exact module bytes and KMI, and that each record has compiler provenance. It refuses a partial set, an extra module, and an existing output directory.
 
 To package a locally built complete set:
 
@@ -114,11 +130,11 @@ python3 scripts/module_set.py package --release \
 
 The directory still contains the maOS `egysk/kmod/` overlay. It also contains `sources/`, `LICENSES/`, `SOURCE-NOTICE.md`, and `SHA256SUMS`. The archive is written beside the directory as `<name>.tar.gz`; its hash is written to `<name>.tar.gz.sha256`. Archive timestamps, owner fields, and ordering are fixed.
 
-The source bundle uses `sources/kernel/<module>/`, with `sources/include/` and `sources/scripts/` for the shared header and build tools. The pinned EFVS engine is under `sources/efivar-store-engine/`, linked from `sources/kernel/efivar_store/.source`. `EFIVAR_STORE_REPO` selects a local engine checkout. Without it, the package uses `OUT_DIR/sources/efivar_store` or its standalone staging copy.
+The source bundle uses `sources/kernel/<module>/`, with `sources/include/` and `sources/scripts/` for the shared header and build tools. `dm-thin-pool` sources come from its prepared tree, so the bundle carries the staged device-mapper sources and the per-line port scripts that produced them.
 
-Release packaging requires those build-time inventories, verifies each staged source tree before copying, and verifies the copied tree against the same inventory. A source change, addition, deletion, symlink, or wrong EFVS revision refuses the archive.
+Release packaging requires those build-time inventories, verifies each staged source tree before copying, and verifies the copied tree against the same inventory. A source change, addition, deletion, or symlink refuses the archive.
 
-**License gap:** `efivar_store` combines GPL-2.0-only kernel wrapper code with the Apache-2.0 EFVS engine. The archive records this combination for review. It does not claim that distribution compatibility is cleared. Do not publish it as a product release until that review, source-offer obligations, and the exact target qualification are resolved.
+All module sources in the archive are GPL-2.0-only. The archive copies the GPL v2 text to `LICENSES/GPL-2.0-only.txt`. The archive contains no other licensed component.
 
 ## Admission contract
 
@@ -144,7 +160,7 @@ shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh \
   kernel/dm-thin-pool/build.sh
 ```
 
-Run a pinned full arm64 build with one of the three branch-generation pairs in the table. Run a single-module command when only that module needs validation. The build needs the matching image or exact caller-supplied source and output, the selected clang, and the pinned Rust toolchain for `efivar_store`.
+Run a pinned full arm64 build with one of the five branch-generation pairs in the table. Run a single-module command when only that module needs validation. The build needs the matching image or exact caller-supplied source and output and the selected clang.
 
 To check a source-and-binary archive:
 

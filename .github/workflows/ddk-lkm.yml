@@ -18,10 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2026-08-08
-          components: rust-src
       - name: Build and admit the pinned arm64 target
         env:
           OUT_DIR: out/build-matrix

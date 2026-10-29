@@ -1,6 +1,0 @@
-# SPDX-License-Identifier: GPL-2.0-only
-# .source is materialized at exactly SOURCE_REVISION by scripts/kmi_modules.py.
-# The pinned source owns the module rules, the C glue and the engine build.
-EFVS_ROOT := $(src)/.source
-EFVS_CARGO_TARGET_DIR ?= $(abspath $(src)/../../out/linux-cargo)
-include $(EFVS_ROOT)/linux/Kbuild

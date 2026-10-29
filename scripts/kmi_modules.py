@@ -86,7 +86,6 @@ class BuildInfo(TypedDict):
     debug_artifact: NotRequired[dict[str, str]]
     module_provenance: NotRequired[dict[str, str]]
     source_evidence: NotRequired[dict[str, dict[str, str]]]
-    source_revision: NotRequired[str]
 
 
 class ModuleReport(TypedDict):
@@ -173,7 +172,7 @@ class Elf:
 
     def verify_x86_relocations(self) -> None:
         # arch/x86/kernel/module.c applies only these types. In particular,
-        # a freestanding Rust target must not emit userspace GOT references.
+        # a freestanding target must not emit userspace GOT references.
         supported = {0, 1, 2, 4, 10, 11, 24}
         for name, header in self.sections.items():
             if header[1] not in (4, 9):  # SHT_RELA, SHT_REL
@@ -390,7 +389,7 @@ def strip_debug(path: Path, name: str, env: Mapping[str, str]) -> dict[str, str]
     return {"name": debug.name, "sha256": digest(debug)}
 
 
-def capture_source_evidence(directory: Path, name: str, env: Mapping[str, str]) -> dict[str, dict[str, str]]:
+def capture_source_evidence(directory: Path) -> dict[str, dict[str, str]]:
     """Hash the exact staged source inputs before Kbuild runs."""
     evidence = {"module": source_manifest.inventory(directory)}
     repo = Path(__file__).resolve().parents[1]
@@ -402,19 +401,11 @@ def capture_source_evidence(directory: Path, name: str, env: Mapping[str, str]) 
             if candidate.is_dir():
                 evidence["include"] = source_manifest.inventory(candidate)
                 break
-    if name == "efivar_store":
-        if source_revision(directory) is not None:
-            engine = efvs_source(directory).parent
-        else:
-            # The standalone lane builds the materialized `linux/` directory
-            # directly; its parent is the pinned EFVS checkout.
-            engine = directory.parent
-        evidence["efvs"] = source_manifest.inventory(engine)
     return evidence
 
 
 def verify_source_evidence(evidence: dict[str, dict[str, str]], directory: Path,
-                           name: str, env: Mapping[str, str]) -> None:
+                           name: str) -> None:
     source_manifest.verify(directory, evidence.get("module"))
     repo = Path(__file__).resolve().parents[1]
     if "tools" in evidence:
@@ -426,16 +417,10 @@ def verify_source_evidence(evidence: dict[str, dict[str, str]], directory: Path,
                 break
         else:
             raise ValueError(f"source evidence: shared include disappeared for {name}")
-    if name == "efivar_store":
-        if source_revision(directory) is not None:
-            engine = efvs_source(directory).parent
-        else:
-            engine = directory.parent
-        source_manifest.verify(engine, evidence.get("efvs"))
 
 
 def build_info(output: Path, module: PathInput, identity: Kmi, facts: ModuleFacts,
-               revision: str | None, abi: Path | None = None,
+               abi: Path | None = None,
                compiler: dict[str, str] | None = None,
                module_provenance: dict[str, str] | None = None,
                debug_artifact: dict[str, str] | None = None,
@@ -455,8 +440,6 @@ def build_info(output: Path, module: PathInput, identity: Kmi, facts: ModuleFact
         result["debug_artifact"] = debug_artifact
     if source_evidence is not None:
         result["source_evidence"] = source_evidence
-    if revision is not None:
-        result["source_revision"] = revision
     return result
 
 
@@ -479,59 +462,6 @@ def verify_payload(output: PathInput, modules: Sequence[PathInput], branch: str,
             _ = kmi_identity(source, branch, generation)
         reports.append({"module": name, "kmi": identity, "imports": facts["imports"]})
     return reports
-
-
-def source_revision(directory: Path) -> str | None:
-    """The revision a module directory pins, or None when it pins none."""
-    pin = directory / "SOURCE_REVISION"
-    if not pin.is_file():
-        return None
-    revision = pin.read_text().strip()
-    require(re.fullmatch(r"[0-9a-f]{40}", revision), "efvs: invalid source revision")
-    return revision
-
-
-def efvs_source(directory: Path) -> Path:
-    """Build only the recorded revision, not an arbitrary checkout or working tree."""
-    revision = source_revision(directory)
-    require(revision is not None, "efvs: missing SOURCE_REVISION")
-    configured = os.environ.get("EFVS_SOURCE_DIR")
-    repository = os.environ.get("EFIVAR_STORE_REPO", "https://github.com/1vivy/efivar-store.git")
-    local_repository = Path(repository).is_dir()
-    if configured:
-        checkout = Path(configured)
-    elif local_repository:
-        # Reuse the workspace checkout instead of cloning it. The caller
-        # mounts it read-only for the container lane.
-        checkout = Path(repository)
-    else:
-        checkout = directory / ".source"
-    readonly = local_repository and (
-        not configured or Path(configured).resolve() == Path(repository).resolve())
-    if readonly:
-        require(checkout.is_dir(), f"efvs: reused source checkout is missing: {checkout}")
-        head = subprocess.check_output(["/usr/bin/git", "-C", str(checkout), "--no-optional-locks",
-                                        "rev-parse", "HEAD"], text=True).strip()
-        require(head == revision, f"efvs: reused source is {head}, not the pinned {revision}")
-        require(subprocess.check_output(["/usr/bin/git", "-C", str(checkout), "--no-optional-locks",
-                                          "status", "--porcelain", "--untracked-files=all"]).strip() == b"",
-                "efvs: reused source checkout is dirty")
-        return checkout / "linux"
-    if not checkout.parent.exists():
-        checkout.parent.mkdir(parents=True, exist_ok=True)
-    if not checkout.exists():
-        subprocess.run(["/usr/bin/git", "clone", "--no-checkout", repository, str(checkout)], check=True)
-    present = subprocess.run(["/usr/bin/git", "-C", str(checkout), "cat-file", "-e", revision + "^{commit}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if present.returncode != 0:
-        subprocess.run(["/usr/bin/git", "-C", str(checkout), "fetch", "origin", revision], check=True)
-    current = subprocess.run(["/usr/bin/git", "-C", str(checkout), "rev-parse", "HEAD"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    if current.returncode != 0 or current.stdout.strip() != revision:
-        subprocess.run(["/usr/bin/git", "-C", str(checkout), "checkout", "--detach", revision], check=True)
-    head = subprocess.check_output(["/usr/bin/git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
-    require(head == revision, f"efvs: materialized {head}, not the pinned {revision}")
-    require(subprocess.check_output(["/usr/bin/git", "-C", str(checkout), "--no-optional-locks", "status", "--porcelain", "--untracked-files=all"]).strip() == b"", "efvs: source checkout is dirty")
-    return checkout / "linux"
 
 
 def run_kbuild(command: Sequence[str], env: Mapping[str, str], log: Path,
@@ -604,16 +534,13 @@ def build(args: argparse.Namespace) -> ModuleReport:
                 "provenance: missing profile or kernel release")
         module_provenance = {"sha256": digest(provenance_path),
                              "profile": profile, "kernel_release": release}
-    revision = source_revision(directory)
-    if revision is not None:
-        _ = efvs_source(directory)
     arch = kernel_arch(output)
     require(arch == {"aarch64": "arm64", "x86_64": "x86_64"}[args.arch],
             "build: KMI output architecture mismatch or missing .config")
     command = ["make", "-C", str(source), "O=" + str(output), "M=" + str(directory), "ARCH=" + str(arch), "LLVM=1", "KBUILD_GENDWARFKSYMS_STABLE=1", "KBUILD_MODPOST_WARN=1"]
     log = module_output / (name + ".build.log")
     run_kbuild(command + ["clean"], env, log)
-    source_evidence = capture_source_evidence(directory, name, env)
+    source_evidence = capture_source_evidence(directory)
     run_kbuild(command + ["modules", f"-j{args.jobs}"], env, log, append=True)
     if module_output != directory:
         # Kernels before 6.13 have no MO=, so kbuild writes the module into the
@@ -621,12 +548,12 @@ def build(args: argparse.Namespace) -> ModuleReport:
         # directory and clean the intermediates: no artifact stays behind.
         shutil.move(str(directory / (name + ".ko")), str(module))
         run_kbuild(command + ["clean"], env, log, append=True)
-    verify_source_evidence(source_evidence, directory, name, env)
+    verify_source_evidence(source_evidence, directory, name)
     abi_path = Path(args.kmi_abi).resolve(strict=True) if args.kmi_abi else None
     debug_artifact = strip_debug(module, name, env) if args.strip_debug else None
     facts = verify_module(module, name, output, args.arch, abi_path)
     build_info_path(module).write_text(json.dumps(
-        build_info(output, module, identity, facts, revision, abi_path,
+        build_info(output, module, identity, facts, abi_path,
                    compiler, module_provenance, debug_artifact, source_evidence),
         indent=2, sort_keys=True) + "\n")
     return {"module": name, "kmi": identity, "imports": facts["imports"]}

@@ -16,11 +16,11 @@ The kernel checks `module_layout` independently. Admission therefore checks a pr
 
 The projection module uses upstream device-mapper for data BIO handling, queue stacking, and crypto. It publishes per-disk GPT metadata through configfs and uses shared endpoint protection. It does not implement a standalone gendisk or physical GPT writer. Its `sealed` state describes owned read-only changes, not a cryptographic boundary.
 
-## EFI variable storage
+## Kernel-line ports
 
-The EFI store uses a small C ABI between its kernel module and pinned freestanding Rust engine. It does not link against Rust symbols from the running kernel. The engine therefore does not require `CONFIG_RUST` or the kernel Rust crates.
+Each module keeps the interfaces of one kernel line apart from the interfaces of another line. A line port states its own interfaces and quirks. Shared logic stays in one place, and a build for an unported line fails instead of reusing another line's code.
 
-The backend uses the backing file's opener credentials for I/O. It preserves native EFI objects and refuses blank storage without writing. Firmware owns initialization and compaction.
+`part-projection` selects its block-device port from the kernel version at compile time. `dm-thin-pool` applies a port programme to that line's own device-mapper sources, because its differences are source edits and not one include boundary. Both arrangements keep one copy of the shared behavior per module.
 
 ## Source of current contracts
 

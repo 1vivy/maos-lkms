@@ -25,7 +25,7 @@ if [ -e "$record" ]; then
     echo "DDK target record already exists: $record (select a fresh OUT_DIR)" >&2
     exit 2
 fi
-if [ "$branch-$generation" = "android14-6.1-11" ]; then
+if [ -z "$abi" ]; then
     echo "target has no published abi.stg; admission uses image Module.symvers and System.map" >&2
 fi
 if ! command -v docker >/dev/null 2>&1; then
@@ -36,41 +36,14 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then
     echo "pulling pinned DDK image by digest: $image" >&2
     docker pull "$image"
 fi
-cargo_home=${CARGO_HOME:-$HOME/.cargo}
-rustup_home=${RUSTUP_HOME:-$HOME/.rustup}
-if [ ! -d "$cargo_home" ] || [ ! -d "$rustup_home" ]; then
-    echo "pinned nightly-2026-08-08 Rust toolchain required at $cargo_home / $rustup_home (for the freestanding efivar_store engine)" >&2
-    exit 2
-fi
 modules=$*
-efivar_repo=
-if [ -n "${EFIVAR_STORE_REPO:-}" ]; then
-    if [ -d "$EFIVAR_STORE_REPO" ]; then
-        efivar_repo=$(CDPATH='' cd -- "$EFIVAR_STORE_REPO" && pwd -P)
-    else
-        case "$EFIVAR_STORE_REPO" in
-            *://*|*@*:*) ;;
-            *) echo "EFIVAR_STORE_REPO is neither a local directory nor a repository URL: $EFIVAR_STORE_REPO" >&2; exit 2 ;;
-        esac
-    fi
-fi
 set -- docker run --rm --user "$(id -u):$(id -g)" \
     -v "$root:$root" -w "$root" \
-    -v "$cargo_home:/cargo" -v "$rustup_home:/rustup"
-if [ -n "$efivar_repo" ]; then
-    set -- "$@" -v "$efivar_repo:/opt/maos/efivar-store:ro" \
-        -e EFIVAR_STORE_REPO=/opt/maos/efivar-store
-elif [ -n "${EFIVAR_STORE_REPO:-}" ]; then
-    set -- "$@" -e "EFIVAR_STORE_REPO=$EFIVAR_STORE_REPO"
-fi
-set -- "$@" \
     -e OUT_DIR="$out_root" \
-    -e HOME=/tmp -e CARGO_HOME=/cargo -e RUSTUP_HOME=/rustup \
-    -e PATH="/opt/ddk/clang/$clang/bin:/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    -e HOME=/tmp \
+    -e PATH="/opt/ddk/clang/$clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="*" \
     -e DDK_CLANG_DIR="/opt/ddk/clang/$clang/bin" \
-    -e CARGO=/cargo/bin/cargo \
-    -e EFVS_RUSTC=/cargo/bin/rustc \
     -e KMI_ABI="${abi:+/opt/ddk/src/$branch/$abi}" \
     -e DDK_IMAGE="$image" \
     -e JOBS="${JOBS:-4}" \

@@ -35,10 +35,6 @@ jobs:
           BRANCH: ${{ inputs.branch }}
           GENERATION: ${{ inputs.generation }}
         run: sh scripts/bootstrap-ddk-clang.sh "$BRANCH" "$GENERATION"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2026-08-08
-          components: rust-src
       - name: Build and admit exact independent LKMs
         env:
           OUT_DIR: out/build-matrix

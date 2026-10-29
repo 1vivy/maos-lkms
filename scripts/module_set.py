@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import tarfile
 import tempfile
 from pathlib import Path
@@ -18,13 +17,13 @@ try:
 except ImportError:
     import source_manifest
 
-REQUIRED = ("dm-thin-pool", "part-projection", "efivarfs", "efivar_store")
+REQUIRED = ("dm-thin-pool", "part-projection")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_IGNORES = shutil.ignore_patterns(
-    ".git", ".source", "target", "out", "__pycache__", "*.o", "*.ko",
+    ".git", "out", "__pycache__", "*.o", "*.ko",
     "*.cmd", "*.mod", "*.mod.c", "*.mod.o", "*.a", "*.d", "*.order",
     "*.dtb", "*.dtbo", "*.symvers", "*.build.log", "*.ko.debug",
-    "*.ko.build.json", "vars-guid.c", "vars-patched.c", "Module.symvers",
+    "*.ko.build.json", "Module.symvers",
     "modules.order", "modules.builtin", "modules.builtin.modinfo",
     ".depend", ".cache.mk", ".tmp_versions")
 
@@ -45,36 +44,6 @@ def source_tree(out_root: Path, identity: dict[str, object], architecture: str, 
         if (candidate / "Kbuild").is_file():
             return candidate
     raise ValueError(f"release refused: source tree for {name} is unavailable under {out_root}")
-
-
-def efvs_source_tree(out_root: Path) -> Path:
-    configured = os.environ.get("EFIVAR_STORE_REPO")
-    if configured and Path(configured).is_dir():
-        return Path(configured).resolve()
-    fallback = out_root / "sources" / "efivar_store"
-    if fallback.is_dir():
-        return fallback.resolve()
-    standalone = out_root / "sources" / "efivar_store-standalone"
-    if standalone.is_dir():
-        return standalone.resolve()
-    raise ValueError("release refused: EFVS source is unavailable; set EFIVAR_STORE_REPO")
-
-
-def verify_efvs_source(engine: Path, revision: str) -> None:
-    require_license = engine / "LICENSE"
-    if not require_license.is_file():
-        raise ValueError(f"release refused: EFVS license is missing at {require_license}")
-    if (engine / ".git").exists():
-        head = subprocess.check_output(
-            ["/usr/bin/git", "-C", str(engine), "--no-optional-locks", "rev-parse", "HEAD"],
-            text=True).strip()
-        if head != revision:
-            raise ValueError(f"release refused: EFVS source is {head}, expected {revision}")
-        status = subprocess.check_output(
-            ["/usr/bin/git", "-C", str(engine), "--no-optional-locks", "status",
-             "--porcelain", "--untracked-files=all"], text=True)
-        if status.strip():
-            raise ValueError("release refused: EFVS source checkout is dirty")
 
 
 def write_sha256sums(stage: Path) -> None:
@@ -123,13 +92,13 @@ def checked_out(path: Path, strict: bool) -> Path:
 
 
 def record(args: argparse.Namespace) -> int:
-    directory = checked_out(args.directory, strict=True)
     requested = args.requested.split(",")
     if not requested or len(set(requested)) != len(requested) or any(name not in REQUIRED for name in requested):
         raise ValueError("requested modules must be a non-empty unique subset of the required module set")
     failures = set(filter(None, args.failed.split(",")))
     if not failures <= set(requested):
         raise ValueError("failed modules must belong to the requested module set")
+    directory = checked_out(args.directory, strict=True)
     modules = []
     for name in requested:
         artifact = directory / name / f"{name}.ko"
@@ -291,43 +260,22 @@ def package(args: argparse.Namespace) -> int:
             source_manifest.verify(REPO_ROOT / "scripts", tools_evidence)
             copy_source(REPO_ROOT / "scripts", sources / "scripts")
             source_manifest.verify(sources / "scripts", tools_evidence)
-            efivar_store_source = source_tree(out_root, identity, architecture, "efivar_store")
-            revision = (efivar_store_source / "SOURCE_REVISION").read_text().strip()
-            if len(revision) != 40 or any(char not in "0123456789abcdef" for char in revision):
-                raise ValueError("release refused: efivar_store source revision is invalid")
-            engine = efvs_source_tree(out_root)
-            verify_efvs_source(engine, revision)
-            efvs_evidence = source_evidence_by_module.get("efivar_store", {}).get("efvs")
-            if not isinstance(efvs_evidence, dict):
-                raise ValueError("release refused: EFVS source evidence is missing")
-            source_manifest.verify(engine, efvs_evidence)
-            copy_source(engine, sources / "efivar-store-engine")
-            source_manifest.verify(sources / "efivar-store-engine", efvs_evidence)
-            source_notice.append(f"- `efivar-store-engine`: `sources/efivar-store-engine` (revision `{revision}`)")
-            source_link = source_kernel / "efivar_store" / ".source"
-            source_link.symlink_to("../../efivar-store-engine")
             licenses = stage / "LICENSES"
             licenses.mkdir()
             gpl = REPO_ROOT / "kernel/dm-thin-pool/LICENSE"
             if not gpl.is_file():
                 raise ValueError(f"release refused: GPL-2.0-only text is missing at {gpl}")
             shutil.copyfile(gpl, licenses / "GPL-2.0-only.txt")
-            shutil.copyfile(engine / "LICENSE", licenses / "Apache-2.0.txt")
             notice = (
                 "# maOS LKM source and license notice\n\n"
                 "This archive contains build-and-admission candidates and their corresponding module sources.\n"
                 "It is not a device-qualified release.\n\n"
                 "## Sources\n\n" + "\n".join(source_notice) + "\n\n"
-                "The module sources use the `sources/kernel/` layout. `sources/include/` and `sources/scripts/` "
-                "supply the shared header and build tools. `sources/kernel/efivar_store/.source` links to "
-                "`sources/efivar-store-engine`.\n\n"
-                "`dm-thin-pool`, `part-projection`, `efivarfs`, and the `efivar_store` kernel wrapper are "
-                "distributed under GPL-2.0-only. `efivar-store-engine` is Apache-2.0.\n\n"
-                "The top-level repository GPL-3.0 text does not cover these module subtrees.\n\n"
-                "## License review gap\n\n"
-                "`efivar_store` combines GPL-2.0-only kernel wrapper code with the Apache-2.0 engine. "
-                "Distribution compatibility of that combination requires explicit legal review. "
-                "This archive does not claim that review is complete and must not be published as a cleared release.\n"
+                "The module sources use the `sources/kernel/` layout. "
+                "`sources/include/` supplies the shared header. `sources/scripts/` supplies the build tools.\n\n"
+                "`dm-thin-pool` and `part-projection` are distributed under GPL-2.0-only.\n"
+                "The license text is in `LICENSES/GPL-2.0-only.txt`.\n\n"
+                "The top-level repository GPL-3.0 text does not cover these module subtrees.\n"
             )
             (stage / "SOURCE-NOTICE.md").write_text(notice)
         shutil.copyfile(manifest_path, stage / "set.json")
@@ -351,7 +299,6 @@ def package(args: argparse.Namespace) -> int:
                 "source_notice": "SOURCE-NOTICE.md",
                 "checksums": "SHA256SUMS",
                 "archive": archive_path.name,
-                "license_review": "required for efivar_store GPL-2.0-only/Apache-2.0 combination",
             })
         (stage / "manifest.json").write_text(json.dumps(release_manifest, indent=2, sort_keys=True) + "\n")
         if release:

@@ -7,11 +7,10 @@ import os
 from pathlib import Path
 
 EXCLUDED = (
-    '.git', '.source', 'target', 'out', '__pycache__', '.tmp_versions',
+    '.git', 'out', '__pycache__', '.tmp_versions',
     '*.o', '*.ko', '*.ko.debug', '*.ko.build.json', '*.cmd', '*.mod', '*.mod.c',
     '*.a', '*.d', '*.order', '*.dtb', '*.dtbo', '*.symvers', '*.build.log',
     'Module.symvers', 'Module.markers', 'modules.builtin', 'modules.builtin.modinfo',
-    'vars-guid.c', 'vars-patched.c', 'efvs-x86_64.json', 'efvs-*.json',
     '.depend', '.cache.mk',
 )
 

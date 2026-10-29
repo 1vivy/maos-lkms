@@ -1,10 +1,10 @@
 # Reporting Security Issues
 
-These are independent privileged kernel modules, not a root provider or a hostile-root isolation boundary. Report memory-safety defects, callback/reference lifetime errors, invalid state transitions, unauthorized configfs operations, incorrect read-only enforcement, KMI admission errors, EFI backing-store corruption, or incorrect credential overrides.
+These are independent privileged kernel modules, not a root provider or a hostile-root isolation boundary. Report memory-safety defects, callback/reference lifetime errors, invalid state transitions, unauthorized configfs operations, incorrect read-only enforcement, or KMI admission errors.
 
 `part-projection` changes the visible partition view without writing physical GPT metadata. Privileged raw whole-device access is outside that view's enforcement boundary. Destroy must preserve active mappings when sealed or busy. Metadata/readiness fields do not authorize a caller or repair incompatible kernel layouts.
 
-`efivar_store` retains only its backing file opener credentials for narrowly bracketed I/O. It must restore caller credentials on every path, preserve native EFI sysfs ownership, and refuse blank storage without writes. No root-runtime credential provider is involved. A build or permissive VM round-trip does not establish enforcing Android HAL access or safe device deployment.
+`dm-thin-pool` presents device-mapper thin-provisioning targets. Report metadata corruption, leaked device or pool references, incorrect teardown order, or readiness that reports ready before every subsystem initialized.
 
 Report privately through the owner's [Egysk security advisory form](https://github.com/1vivy/egysk/security/advisories/new).
 Include the exact source revision, module hash and build info, kernel
