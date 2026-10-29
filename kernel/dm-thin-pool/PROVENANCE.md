@@ -152,6 +152,7 @@ correctly on all of them.
 
 | Line | Device-mapper sources | Profile |
 | --- | --- | --- |
+| 5.10 | that line's kernel source, ported | generated |
 | 5.15 | that line's kernel source, ported | generated |
 | 6.1 | that line's kernel source, ported | generated |
 | 6.6 | that line's kernel source, ported | generated |
@@ -162,12 +163,13 @@ The module tree separates shared code from line differences:
 
 - `prepare.py` holds each shared transformation once and applies it to every
   generated line.
-- `abi/5.15/port.py`, `abi/6.1/port.py`, `abi/6.6/port.py` and
-  `abi/6.18/port.py` hold only the real differences for that line: the edited
-  sources in order, the metadata open flags, the `DM_TARGET_PASSES_CRYPTO`
-  additions the line needs, errno status availability, the wait-bit test, the
-  bio allocation and completion forms, the kcopyd declaration type, and the
-  5.15 count for a pool name reached through `tc->pool`.
+- `abi/5.10/port.py`, `abi/5.15/port.py`, `abi/6.1/port.py`,
+  `abi/6.6/port.py` and `abi/6.18/port.py` hold only the real differences for
+  that line: the edited sources in order, the metadata open flags, the
+  `DM_TARGET_PASSES_CRYPTO` additions the line needs, errno status
+  availability, the wait-bit test, the bio allocation and completion forms,
+  the kcopyd declaration type, and the count for a pool name reached through
+  `tc->pool` (one on 5.10 and 5.15, none on the other generated lines).
 - `abi/6.12/port.py` declares the verified profile and the one proven branch.
   It carries no edits.
 
@@ -211,20 +213,25 @@ The programme is more than a rename list:
   `dm_bufio_release_move`, which the 6.12 list did not cover.
 - The private errno-to-status helper follows each line's own `blk_errors[]`
   table in `block/blk-core.c`. The 6.18 line has `BLK_STS_INVAL`, so -EINVAL
-  maps to it. The 5.15, 6.1 and 6.6 lines have no such status and map -EINVAL
-  to `BLK_STS_IOERR`, as their own `errno_to_blk_status()` does. The 5.15 line
-  also has no `BLK_STS_OFFLINE`; its table maps -ENODEV to `BLK_STS_IOERR`,
-  while 6.1, 6.6 and 6.18 map it to `BLK_STS_OFFLINE`. The programme rejects a
-  mapping that names a status the line lacks.
+  maps to it. The 5.10, 5.15, 6.1 and 6.6 lines have no such status and map
+  -EINVAL to `BLK_STS_IOERR`, as their own `errno_to_blk_status()` does. The
+  5.10 and 5.15 lines also have no `BLK_STS_OFFLINE`; their tables map -ENODEV
+  to `BLK_STS_IOERR`, while 6.1, 6.6 and 6.18 map it to `BLK_STS_OFFLINE`. The
+  programme rejects a mapping that names a status the line lacks. On 5.10,
+  `include/linux/blk_types.h` defines neither status and
+  `block/blk-core.c`'s `blk_errors[]` has neither -EINVAL nor -ENODEV entry.
 - Both targets declare `DM_TARGET_PASSES_CRYPTO`, and `pool_ctr` rejects a pool
   that does not set `skip_block_zeroing`. An encrypted thin pool must not write
   zeroes below the encryption target, and a stacked device keeps its
   inline-encryption capabilities only when every member target passes them.
-  Upstream 5.15, 6.1 and 6.6 do not set the flag on either thin target, so
-  their ABI files add it; their `include/linux/device-mapper.h` defines the
-  flag and their `dm-table.c` honours it. Upstream 6.18 has the flag, and the
-  shared required-token check asserts it. The 6.12 verified tree already has
-  both the flags and the zeroing policy.
+  Upstream 5.10, 5.15, 6.1 and 6.6 do not set the flag on either thin target,
+  so their ABI files add it; their `include/linux/device-mapper.h` defines the
+  flag and their `dm-table.c` honours it. The 5.10 DDK output enables
+  `CONFIG_BLK_INLINE_ENCRYPTION=y` and `CONFIG_DM_DEFAULT_KEY=y`, and its
+  `dm-table.c` intersects the stacked keyslot manager only for targets that
+  pass crypto. Upstream 6.18 has the flag, and the shared required-token check
+  asserts it. The 6.12 verified tree already has both the flags and the
+  zeroing policy.
 - `private-rename.h` still renames the private cross-file symbols. A generated
   tree records which renames the line's sources do not use. A rename the
   header lacks cannot be detected without a build, so modpost and KMI admission
@@ -244,8 +251,10 @@ It checks the following:
 
 - The branch line equals the source `Makefile` version line.
 - The output `UTS_RELEASE` is from that same line.
-- Every ACK identity declaration that exists matches the call. The 5.15 line
-  declares `BRANCH=android13-5.15` in `build.config.constants` and generation 8
+- Every ACK identity declaration that exists matches the call. The 5.10 line
+  declares `BRANCH=android12-5.10` and generation 9 in `build.config.common`;
+  it has no `build.config.constants`. The 5.15 line declares
+  `BRANCH=android13-5.15` in `build.config.constants` and generation 8
   in `build.config.common`. The 6.1 line declares `BRANCH` in
   `build.config.constants` and generation 11 in `build.config.common`. The 6.6
   line declares branch and generation 8 in `build.config.common`. The 6.12 line
@@ -270,31 +279,35 @@ It checks the following:
 - The staged `dm-thin.c` defines `thin-pool` and `thin` and records its version
   triple.
 
-### Pinned 5.15 and 6.6 inputs
+### Pinned 5.10, 5.15 and 6.6 inputs
 
-The 5.15 and 6.6 generated lines were derived from these digest-pinned DDK
-images, read only:
+The 5.10, 5.15 and 6.6 generated lines were derived from these digest-pinned
+DDK images, read only:
 
 | Line | Image | Source release | Branch | KMI generation | CLANG_VERSION |
 | --- | --- | --- | --- | --- | --- |
+| 5.10 | `ghcr.io/ylarod/ddk-min@sha256:272ada1e61c525116032246df2a790d1ccec1804b7a9e0b09203c5e650dcb78e` | 5.10.252 | `android12-5.10` | 9 | `r416183b` |
 | 5.15 | `ghcr.io/ylarod/ddk-min@sha256:9e68cd9fcab748584755d31ba88ef134efc938dbde17f258c2652315f6cd81cd` | 5.15.202 | `android13-5.15` | 8 | `r450784e` |
 | 6.6 | `ghcr.io/ylarod/ddk-min@sha256:51159bc935c75a282fc65bc87e02f16bd098d1cdf55dc558c4fdd0fcf7a132e2` | 6.6.127 | `android15-6.6` | 8 | `r510928` |
 
-Neither image carries `gki/abi.stg`. A KMI reference for these lanes must come
-from that image's `Module.symvers`/`System.map` or a separately published
-`abi.stg`; the port makes no KMI claim of its own.
+None of these images carries `gki/abi.stg`; the 5.10 image carries
+`clang-r416183b` at `/opt/ddk/clang/clang-r416183b`, not at the source-relative
+`prebuilts-master/clang/host/linux-x86/clang-r416183b` path its
+`build.config.common` names. A KMI reference for these lanes must come from
+that image's `Module.symvers`/`System.map` or a separately published `abi.stg`;
+the port makes no KMI claim of its own.
 
 SHA-256 of the five edited sources:
 
-| File | android13-5.15 | android15-6.6 |
-| --- | --- | --- |
-| `drivers/md/dm-thin.c` | `0eb7e09851470dc0e43bf385b298c89650efd3c44ee6a4d5af16298f56c8a867` | `082ddd6ed194e05d007cf55f66693f441c7c973d43aa59504c88bcb34b3bdb2c` |
-| `drivers/md/dm-bufio.c` | `4f94a8078563248120fc66986169ab7507e616e59ef9b78076dbaa08b802f36b` | `4e35a7589ad5865c957aaf934f49ac467a58b3ac64b9f1974845b10885184534` |
-| `drivers/md/dm-kcopyd.c` | `06c54071a10d313ae9b4de0bb98fafd3afdb09ebb592c093479956be149a33ae` | `08d166770c0a75bd9834c537c420208fa6d688c6be571ac78871f89d5b44b72c` |
-| `drivers/md/dm-io.c` | `3c191af7c50968cfeca918cd2f5d5d4e1efd1422f759ce4b19ea77aba1d9d65d` | `b29746192b115da627c5ccb150d2f83b9cab39fd1b98c4bcee44c6f042a914cc` |
-| `drivers/md/dm-bio-prison-v1.c` | `d9aad44d30a51b7656a43f2ed6f4f56d1d1d27a5c8ddae053f7a5f8cfce5bdb5` | `309b4dd6eb87b48626e2292dcd9a9d52b04619f54b42cec7bd8ec518a505ef91` |
+| File | android12-5.10 | android13-5.15 | android15-6.6 |
+| --- | --- | --- | --- |
+| `drivers/md/dm-thin.c` | `189ee6d63e0057a717c0b904c9a7cbd6cd3e38fc011441d6cec697d756dabcea` | `0eb7e09851470dc0e43bf385b298c89650efd3c44ee6a4d5af16298f56c8a867` | `082ddd6ed194e05d007cf55f66693f441c7c973d43aa59504c88bcb34b3bdb2c` |
+| `drivers/md/dm-bufio.c` | `6ffe67b16a056e5886cf1148cc9314b05db75c39da22367c40a403f027ec196d` | `4f94a8078563248120fc66986169ab7507e616e59ef9b78076dbaa08b802f36b` | `4e35a7589ad5865c957aaf934f49ac467a58b3ac64b9f1974845b10885184534` |
+| `drivers/md/dm-kcopyd.c` | `33e53c598b415957980a30c33a538af711933d36e1e13cd6f7712a17e5a18435` | `06c54071a10d313ae9b4de0bb98fafd3afdb09ebb592c093479956be149a33ae` | `08d166770c0a75bd9834c537c420208fa6d688c6be571ac78871f89d5b44b72c` |
+| `drivers/md/dm-io.c` | `6f7384d61398df77153374bab45f37ddcdab428c105af3a664cd7b663c4fbf57` | `3c191af7c50968cfeca918cd2f5d5d4e1efd1422f759ce4b19ea77aba1d9d65d` | `b29746192b115da627c5ccb150d2f83b9cab39fd1b98c4bcee44c6f042a914cc` |
+| `drivers/md/dm-bio-prison-v1.c` | `d9aad44d30a51b7656a43f2ed6f4f56d1d1d27a5c8ddae053f7a5f8cfce5bdb5` | `d9aad44d30a51b7656a43f2ed6f4f56d1d1d27a5c8ddae053f7a5f8cfce5bdb5` | `309b4dd6eb87b48626e2292dcd9a9d52b04619f54b42cec7bd8ec518a505ef91` |
 
-Both persistent-data directories contain the same ten `.c` files and eleven
+Each persistent-data directory contains the same ten `.c` files and eleven
 `.h` files as the vendored tree; `Kbuild` already lists every one. The staged
 member check therefore passes without a Kbuild change.
 
@@ -327,9 +340,40 @@ notices.
 - The 6.1 dm-bufio carries two Android vendor trace hook calls
   (`trace_android_vh_dm_bufio_shrink_scan_bypass` and
   `trace_android_vh_cleanup_old_buffers_bypass`). The DDK 6.1 image exports
-  those hooks, so the port keeps the vendor behavior. The 5.15 and 6.6 sources
-  carry the same calls, and their `Module.symvers` export the referenced
-  tracepoint/static-key symbols.
+  those hooks, so the port keeps the vendor behavior. The 5.10, 5.15 and 6.6
+  sources carry the same calls, and their `Module.symvers` export the
+  referenced tracepoint/static-key symbols.
+- The 5.10 metadata open form matches 5.15: `drivers/md/dm-thin.c:3325` is
+  `metadata_mode = FMODE_READ | ((pf.mode == PM_READ_ONLY) ? 0 : FMODE_WRITE);`.
+  5.10 has no `BLK_OPEN_READ`/`BLK_OPEN_WRITE`, so the ABI file declares that
+  exact form.
+- 5.10 `drivers/md/dm-thin.c:1185` names the pool through
+  `dm_device_name(tc->pool->pool_md)` in the discard-passdown warning, so its
+  `POOL_NAME_TC_USES` is one. The shared 21-match
+  `dm_device_name(pool->pool_md)` edit covers the remaining diagnostics.
+- 5.10 `drivers/md/dm-bufio.c:631` allocates with
+  `bio_kmalloc(GFP_NOWAIT | __GFP_NORETRY | __GFP_NOWARN, vec_size)`;
+  `include/linux/bio.h:397` declares the three-argument
+  `bio_alloc_bioset(gfp, nr_iovecs, bio_set)`, and `bio_kmalloc()` itself calls
+  it with a NULL pool. The ABI alloc edit uses `&dm_bufio_bioset` and leaves
+  `bio_set_dev()` and `bio_set_op_attrs()` in place. 5.10
+  `bio_complete()` at `dm-bufio.c:612-618` already calls `bio_put()` at line
+  616, and the `bio_add_page()` failure path already calls `bio_put()`, so the
+  completion edit list is empty and BIO ownership stays with the module pool.
+- 5.10 `include/linux/blk_types.h:67-130` defines neither `BLK_STS_INVAL` nor
+  `BLK_STS_OFFLINE`; `block/blk-core.c:181-204` has no -EINVAL or -ENODEV
+  entry. The private mapping therefore sends both to `BLK_STS_IOERR`.
+- 5.10 `include/linux/wait_bit.h:96-103` tests the bit with `test_bit()`;
+  `test_bit_acquire()` does not exist in that line.
+- 5.10 `drivers/md/dm-kcopyd.c:143` declares the sub-job size in `unsigned`.
+  The source also carries the Android reserved-memory block under
+  `#ifndef MODULE`; the module build keeps that block excluded and preserves
+  the vendor code unchanged.
+- 5.10 `dm-bufio.c` calls the Android vendor hooks
+  `trace_android_vh_dm_bufio_shrink_scan_bypass` and
+  `trace_android_vh_cleanup_old_buffers_bypass`. The pinned image's
+  `Module.symvers` exports their `__SCK__tp_func_*` and `__traceiter_*`
+  expansions as `EXPORT_SYMBOL_GPL`, so the port keeps the vendor behavior.
 - The 5.15 and 6.6 metadata open forms differ. In 5.15
   `drivers/md/dm-thin.c:3325` is
   `metadata_mode = FMODE_READ | ((pf.mode == PM_READ_ONLY) ? 0 : FMODE_WRITE);`.
@@ -365,9 +409,12 @@ notices.
   6.6 and later lines use `unsigned int`. The shared edit reproduces the
   line's own declaration.
 - No generated tree is built, admitted, loaded or exercised. Snapshots,
-  discard, ENOSPC, suspend/resume and metadata recovery behavior on 5.15, 6.1,
-  6.6 and 6.18 are unproven. A build and the KMI admission of each exact
-  artifact are the next required evidence.
+  discard, ENOSPC, suspend/resume and metadata recovery behavior on 5.10, 5.15,
+  6.1, 6.6 and 6.18 are unproven. The 5.10 source staging against the pinned
+  `android12-5.10` image satisfied the counted-anchor, required/forbidden
+  token, export-rename, Kbuild-member and entry-point checks; that is a source
+  claim only. A build and the KMI admission of each exact artifact are the next
+  required evidence.
 
 ## Module integration
 

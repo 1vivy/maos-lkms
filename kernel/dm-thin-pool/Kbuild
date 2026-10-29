@@ -18,3 +18,7 @@ dm-thin-pool-y := thin-main.o \
 	src/persistent-data/dm-btree-spine.o src/dm-thin-metadata.o src/dm-thin.o
 ccflags-y += -I$(srctree)/drivers/md -I$(src)/src -I$(src)/src/persistent-data
 ccflags-y += -I$(THINPOOL_INCLUDE_DIR) -include $(src)/private-rename.h
+
+# 5.10's CFI kallsyms post-link step writes $(obj)/dm-thin-pool.lds but does not
+# list it as a clean target; scripts/Makefile.clean reads this variable.
+clean-files += dm-thin-pool.lds

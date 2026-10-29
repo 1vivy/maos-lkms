@@ -22,7 +22,7 @@ headers of every vendored file.
 | Description | `maos thin provisioning targets (thin-pool, thin)` |
 | Author | `maos` |
 | License | `GPL v2` in `thin-main.c`; the vendored files keep their upstream `MODULE_LICENSE("GPL")` boilerplate, all GPL-2-compatible (see `PROVENANCE.md`) |
-| Device-mapper targets | `thin-pool` and `thin`, names unchanged from upstream; the version triple comes from the matching kernel source: 1.22.0 on 5.15 and 6.1, 1.23.0 on 6.6 and 6.12, 1.24.0 on 6.18 |
+| Device-mapper targets | `thin-pool` and `thin`, names unchanged from upstream; the version triple comes from the matching kernel source: 1.22.0 on 5.10, 5.15 and 6.1, 1.23.0 on 6.6 and 6.12, 1.24.0 on 6.18 |
 
 The module identity and readiness parameter apply to newly built modules. A previously built artifact does not change when source metadata changes.
 
@@ -51,6 +51,7 @@ init order and every failure-unwind branch are unchanged.
 
 | Line | Device-mapper sources | Profile |
 | --- | --- | --- |
+| 5.10 | that line's own kernel source, ported | generated |
 | 5.15 | that line's own kernel source, ported | generated |
 | 6.1 | that line's own kernel source, ported | generated |
 | 6.6 | that line's own kernel source, ported | generated |
@@ -65,12 +66,15 @@ with exit status 2. The tool never compiles, loads or qualifies a module.
 
 Each line file names its profile, the edited sources in order and the
 version-specific edits. The 6.12 file names the one proven branch and applies
-no edits. The 5.15, 6.1, 6.6 and 6.18 files hold the crypto flags, metadata
-open flags, errno statuses, wait-bit test, bio allocation and completion forms,
-and the kcopyd declaration that their sources need. The 5.15 file also names
-the one discard-path site that reaches the pool name through `tc->pool`.
+no edits. The 5.10, 5.15, 6.1, 6.6 and 6.18 files hold the crypto flags,
+metadata open flags, errno statuses, wait-bit test, bio allocation and
+completion forms, and the kcopyd declaration that their sources need. The 5.10
+and 5.15 files also name the one discard-path site that reaches the pool name
+through `tc->pool`.
 
-The ACK identity declarations differ per line. `android13-5.15` declares
+The ACK identity declarations differ per line. `android12-5.10` declares
+`BRANCH=android12-5.10` and generation 9 in `build.config.common`; that source
+has no `build.config.constants`. `android13-5.15` declares
 `BRANCH` in `build.config.constants` and generation 8 in
 `build.config.common`. `android14-6.1` declares `BRANCH` in
 `build.config.constants` and generation 11 in `build.config.common`.
@@ -88,9 +92,15 @@ python3 kernel/dm-thin-pool/prepare.py \
     --output out/build-matrix/prepared/android17-6.18-5/aarch64/dm-thin-pool
 ```
 
-The 5.15 and 6.6 lines use the same tool with their own identity:
+The 5.10, 5.15 and 6.6 lines use the same tool with their own identity:
 
 ```sh
+python3 kernel/dm-thin-pool/prepare.py \
+    --branch android12-5.10 --generation 9 --arch aarch64 \
+    --kernel-source /opt/ddk/src/android12-5.10 \
+    --kernel-output /opt/ddk/kdir/android12-5.10 \
+    --output out/build-matrix/prepared/android12-5.10-9/aarch64/dm-thin-pool
+
 python3 kernel/dm-thin-pool/prepare.py \
     --branch android13-5.15 --generation 8 --arch aarch64 \
     --kernel-source /opt/ddk/src/android13-5.15 \
@@ -123,9 +133,9 @@ previous stage before a rerun. It creates missing parent directories only.
 A pool must load with `skip_block_zeroing`. `pool_ctr` rejects a pool without
 it, because an encrypted thin pool must not write zeroes below the encryption
 target. Both targets also declare `DM_TARGET_PASSES_CRYPTO`, so a stacked
-device keeps its inline-encryption capabilities. Upstream 5.15, 6.1 and 6.6
-sources do not set that flag on the thin targets, so their ABI files add it.
-Upstream 6.18 has it, and the shared required-token check asserts it.
+device keeps its inline-encryption capabilities. Upstream 5.10, 5.15, 6.1 and
+6.6 sources do not set that flag on the thin targets, so their ABI files add
+it. Upstream 6.18 has it, and the shared required-token check asserts it.
 
 ## Build
 
@@ -137,8 +147,8 @@ Prerequisites:
 - a clang/LLVM toolchain matching that kernel (`LLVM=1` is always used).
 
 The commands below build this directory's own sources, which are the verified
-6.12 tree. Use the staged directory from `prepare.py` for 5.15, 6.1, 6.6 or
-6.18.
+6.12 tree. Use the staged directory from `prepare.py` for 5.10, 5.15, 6.1, 6.6
+or 6.18.
 
 ```sh
 KMI_SRC=/path/to/kernel KMI_OUT=/path/to/out KMI_BRANCH=android16-6.12 KMI_GENERATION=6 KMI_ARCH=aarch64 kernel/dm-thin-pool/build.sh
@@ -194,14 +204,16 @@ and the full dm-thin behavior matrix in QEMU (snapshots, discard, partial-block
 zeroing, `dm-default-key` ciphertext equality, ENOSPC modes, forced-reset
 metadata recovery).
 
-The 5.15, 6.1, 6.6 and 6.18 sources are staged by `prepare.py` and are not
-built, admitted, loaded or exercised yet. A staged tree is a source claim, not
-a behavior claim. The staged 6.18 `src/dm-thin.c` keeps the upstream
-`DM_TARGET_PASSES_CRYPTO` flags. The 5.15, 6.1 and 6.6 ABI files add the same
-flags, because those lines' `dm-table.c` drops inline-encryption capabilities
-for a stack whose target lacks the flag and the thin data path keeps the bio
-crypt context. The encrypted 5.15, 6.1 and 6.6 stacks are unproven until each
-lane builds and runs the encryption checks.
+The 5.10, 5.15, 6.1, 6.6 and 6.18 sources are staged by `prepare.py` and are
+not built, admitted, loaded or exercised yet. A staged tree is a source claim,
+not a behavior claim. The 5.10 staging was established against the pinned
+`android12-5.10` 5.10.252 DDK image; its `PROVENANCE.json` records the exact
+source hashes and all 60 counted edits. The staged 6.18 `src/dm-thin.c` keeps
+the upstream `DM_TARGET_PASSES_CRYPTO` flags. The 5.10, 5.15, 6.1 and 6.6 ABI
+files add the same flags, because those lines' `dm-table.c` drops
+inline-encryption capabilities for a stack whose target lacks the flag and the
+thin data path keeps the bio crypt context. The encrypted 5.10, 5.15, 6.1 and
+6.6 stacks are unproven until each lane builds and runs the encryption checks.
 
 ## Product build gates
 

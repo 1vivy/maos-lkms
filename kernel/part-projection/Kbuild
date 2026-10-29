@@ -2,5 +2,9 @@
 obj-m := part-projection.o
 part-projection-y := configfs.o target.o
 ccflags-y += -I$(src)/../../include
-# bdev.h selects abi/6.1, abi/6.12 or abi/6.18 from the kernel version of this
-# build. Only the functional core is shared; each line port owns its ABI.
+# 5.10's CFI kallsyms post-link step writes $(obj)/part-projection.lds but does
+# not list it as a clean target; scripts/Makefile.clean reads this variable.
+clean-files += part-projection.lds
+# bdev.h selects abi/5.10, abi/5.15, abi/6.1, abi/6.6, abi/6.12 or abi/6.18
+# from the kernel version of this build. Only the functional core is shared;
+# each line port owns its ABI.

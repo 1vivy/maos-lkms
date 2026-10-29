@@ -11,7 +11,9 @@ The modules do not depend on the Egysk helper, daemon, credential provider, or r
 
 ## Kernel-line ports
 
-Each module separates shared functional logic from the interfaces of the kernel lines it supports. The supported lines are 5.15, 6.1, 6.6, 6.12, and 6.18. No module applies one line's interface code to another line.
+Each module separates shared functional logic from the interfaces of the kernel lines it supports. Both modules support 5.10, 5.15, 6.1, 6.6, 6.12, and 6.18. No module applies one line's interface code to another line.
+
+The 5.10 ports are pre-rework adapters, not aliases. `part-projection` keeps a `bdget_disk()` reference to the whole block device for the published disk. That reference is not an opener, so it cannot make the device busy or block DM teardown. The port locks that device's `bd_mutex`, reads `bd_openers` (which counts each open partition once), treats `GENHD_FL_UP` as the dead flag, iterates partitions with `disk_part_iter_*`, and enables scanning with `GENHD_FL_EXT_DEVT` while `GENHD_FL_NO_PART_SCAN` is clear. `dm-thin-pool` supplies its 5.10 metadata open mode, status mapping, wait test, bioset allocator and kcopyd declaration as ABI data.
 
 | Module | Shared core | Per-line interfaces |
 | --- | --- | --- |

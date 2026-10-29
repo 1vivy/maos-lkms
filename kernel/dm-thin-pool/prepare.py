@@ -54,7 +54,7 @@ MODULE_NAME = "dm-thin-pool"
 # profile, edited sources and version-specific edits. Shared transformations
 # stay in this file, so no core edit is duplicated per kernel line.
 ABI_ROOT = MODULE_DIR / "abi"
-ABI_LINES = ("5.15", "6.1", "6.6", "6.12", "6.18")
+ABI_LINES = ("5.10", "5.15", "6.1", "6.6", "6.12", "6.18")
 
 # Project sources under src/ that generated staging must copy from this tree.
 PROJECT_HEADERS = ("src/subsystems.h",)

@@ -54,7 +54,7 @@ for module do
     count=$((count + 1))
 done
 [ "$count" -gt 0 ] || { echo "no modules requested" >&2; exit 2; }
-clang_version=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from scripts.kmi_modules import clang_version; print(clang_version(Path(sys.argv[2])))' "$root" "$source")
+clang_version=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from scripts.kmi_modules import clang_version; print(clang_version(Path(sys.argv[2]), sys.argv[3] or None))' "$root" "$source" "${DDK_CLANG:-}")
 clang_dir=${DDK_CLANG_DIR:-$out_root/ddk/clang/clang-$clang_version/bin}
 if [ ! -x "$clang_dir/clang" ] || [ ! -x "$clang_dir/ld.lld" ]; then
     echo "matching DDK clang $clang_version required at $clang_dir (run sh scripts/bootstrap-ddk-clang.sh $branch $generation, or set DDK_CLANG_DIR)" >&2
@@ -63,6 +63,15 @@ fi
 PATH=$clang_dir:$PATH
 export PATH
 unset CROSS_COMPILE
+# CLANG_FLAGS before 5.15 derives --target from CROSS_COMPILE, so those lines
+# need the triple prefix; 5.15 and later derive the target without one.
+if python3 -c 'import re, sys; from pathlib import Path; t = (Path(sys.argv[1]) / "Makefile").read_text(); v = tuple(int(re.search(rf"^{k}\s*=\s*(\d+)", t, re.M).group(1)) for k in ("VERSION", "PATCHLEVEL")); sys.exit(0 if v < (5, 15) else 1)' "$source"; then
+    case "$arch" in
+        aarch64) CROSS_COMPILE=aarch64-linux-gnu- ;;
+        x86_64) CROSS_COMPILE=x86_64-linux-gnu- ;;
+    esac
+    export CROSS_COMPILE
+fi
 echo "compiler: $("$clang_dir/clang" --version | head -n 1)" >&2
 python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from scripts.kmi_modules import kmi_identity; kmi_identity(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))' "$root" "$source" "$branch" "$generation"
 destination=$out_root/modules/$branch-$generation/$arch

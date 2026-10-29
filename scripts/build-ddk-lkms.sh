@@ -44,6 +44,7 @@ set -- docker run --rm --user "$(id -u):$(id -g)" \
     -e PATH="/opt/ddk/clang/$clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="*" \
     -e DDK_CLANG_DIR="/opt/ddk/clang/$clang/bin" \
+    -e DDK_CLANG="$clang" \
     -e KMI_ABI="${abi:+/opt/ddk/src/$branch/$abi}" \
     -e DDK_IMAGE="$image" \
     -e JOBS="${JOBS:-4}" \

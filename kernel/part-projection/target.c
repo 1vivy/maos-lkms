@@ -102,9 +102,9 @@ static int meta_map(struct dm_target *ti,struct bio *bio)
      offset + bio->bi_iter.bi_size > (ti->len << SECTOR_SHIFT))
   return DM_MAPIO_KILL;
  bio_for_each_segment(bv,bio,iter) {
-  void *dest=bvec_kmap_local(&bv);
+  void *dest=pp_bvec_map(&bv);
   memcpy(dest,((struct pp_meta *)ti->private)->data+offset,bv.bv_len);
-  kunmap_local(dest);
+  pp_bvec_unmap(dest,&bv);
   offset+=bv.bv_len;
  }
  bio_endio(bio);

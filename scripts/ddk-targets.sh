@@ -9,6 +9,12 @@ resolve_ddk_target() {
     branch=$1
     generation=$2
     case "$branch-$generation" in
+        android12-5.10-9)
+            DDK_TAG=ghcr.io/ylarod/ddk-min:android12-5.10-20260313
+            DDK_IMAGE=ghcr.io/ylarod/ddk-min@sha256:272ada1e61c525116032246df2a790d1ccec1804b7a9e0b09203c5e650dcb78e
+            DDK_CLANG=clang-r416183b
+            DDK_ABI=
+            ;;
         android13-5.15-8)
             DDK_TAG=ghcr.io/ylarod/ddk-min:android13-5.15-20260313
             DDK_IMAGE=ghcr.io/ylarod/ddk-min@sha256:9e68cd9fcab748584755d31ba88ef134efc938dbde17f258c2652315f6cd81cd

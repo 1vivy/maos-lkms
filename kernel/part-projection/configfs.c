@@ -24,8 +24,9 @@ struct projection_disk {
  struct gendisk *published;
  struct mapped_device *preparing;
  struct device *anchor_parent;
- unsigned int saved_flags;
- bool pinned;
+ pp_disk_ref ref;
+ pp_scan_state scan;
+ bool pinned, ref_held;
  unsigned int metadata_lbs, metadata_sectors, metadata_next;
  u8 metadata[PP_METADATA_SECTORS << SECTOR_SHIFT];
  bool metadata_ready, metadata_frozen;
@@ -106,7 +107,7 @@ struct endpoint {
  pp_bdev_handle *file, *whole;
  char name[PARTITION_META_INFO_VOLNAMELTH];
 };
-struct ro_part { struct list_head entry; struct block_device *bdev; };
+struct ro_part { struct list_head entry; pp_part_ref *part; };
 struct ro_disk { struct list_head entry; struct gendisk *disk; };
 static LIST_HEAD(ro_parts);
 static LIST_HEAD(ro_disks);
@@ -163,8 +164,8 @@ static void restore(void)
  struct ro_disk *d,*dn;
  struct projection_disk *disk;
  list_for_each_entry_safe(p,pn,&ro_parts,entry) {
-  pp_bdev_ro(p->bdev,false); list_del(&p->entry);
-  put_device(&p->bdev->bd_device); kfree(p);
+  pp_part_ro(p->part,false); list_del(&p->entry);
+  pp_part_put(p->part); kfree(p);
  }
  list_for_each_entry_safe(d,dn,&ro_disks,entry) {
   set_disk_ro(d->disk,false); list_del(&d->entry); put_disk(d->disk); kfree(d);
@@ -172,9 +173,10 @@ static void restore(void)
  list_for_each_entry(e,&items,entry) {
   if (e->file) {
    struct block_device *b=pp_bdev(e->file);
-   if (e->hidden_changed && b->bd_meta_info) {
-    memcpy(b->bd_meta_info->volname,e->name,sizeof(e->name));
-    kobject_uevent(&b->bd_device.kobj,KOBJ_CHANGE);
+   struct partition_meta_info *info=pp_bdev_info(b);
+   if (e->hidden_changed && info) {
+    memcpy(info->volname,e->name,sizeof(e->name));
+    kobject_uevent(&pp_bdev_dev(b)->kobj,KOBJ_CHANGE);
     e->hidden_changed=false;
    }
    if (e->whole) { pp_bdev_close(e->whole); e->whole=NULL; }
@@ -184,9 +186,12 @@ static void restore(void)
  }
  list_for_each_entry(disk,&disk_items,entry) {
   if (disk->published) {
-   mutex_lock(&disk->published->open_mutex);
-   disk->published->flags=disk->saved_flags;
-   mutex_unlock(&disk->published->open_mutex);
+   if (disk->ref_held) {
+    pp_disk_lock(&disk->ref,disk->published);
+    pp_disk_scan_restore(disk->published,&disk->scan);
+    pp_disk_unlock(&disk->ref,disk->published);
+    pp_disk_drop(&disk->ref); disk->ref_held=false;
+   }
    put_disk(disk->published); disk->published=NULL;
   }
   put_device(disk->anchor_parent); disk->anchor_parent=NULL;
@@ -198,10 +203,22 @@ static void restore(void)
  }
  active=false; sealed=false; failed=false;
 }
+static int seal_part(struct block_device *bdev,pp_part_ref *part,void *data)
+{
+ struct ro_part *p;
+ (void)data;
+ /* Skip rules stay identical to the pre-port loop. */
+ if (bdev->bd_holder || writable_part(bdev) || pp_part_read_only(part)) return 0;
+ p=kmalloc(sizeof(*p),GFP_KERNEL);
+ if (!p) return -ENOMEM;
+ pp_part_hold(part);
+ p->part=part; list_add_tail(&p->entry,&ro_parts); pp_part_ro(part,true);
+ return 0;
+}
 static int seal_disk(struct gendisk *disk)
 {
- unsigned long index;
- struct block_device *b;
+ pp_disk_ref ref;
+ int err;
  if (!writable_disk(disk)) {
   struct ro_disk *d;
   if (get_disk_ro(disk)) return 0;
@@ -210,17 +227,13 @@ static int seal_disk(struct gendisk *disk)
   d->disk=disk; list_add_tail(&d->entry,&ro_disks); set_disk_ro(disk,true);
   return 0;
  }
- mutex_lock(&disk->open_mutex);
- xa_for_each(&disk->part_tbl,index,b) {
-  struct ro_part *p;
-  if (!index || b->bd_holder || writable_part(b) || bdev_read_only(b)) continue;
-  p=kmalloc(sizeof(*p),GFP_KERNEL);
-  if (!p) { mutex_unlock(&disk->open_mutex); return -ENOMEM; }
-  get_device(&b->bd_device);
-  p->bdev=b; list_add_tail(&p->entry,&ro_parts); pp_bdev_ro(b,true);
- }
- mutex_unlock(&disk->open_mutex);
- return 0;
+ err=pp_disk_hold(disk,&ref);
+ if (err) return err;
+ pp_disk_lock(&ref,disk);
+ err=pp_for_each_part(disk,&ref,seal_part,NULL);
+ pp_disk_unlock(&ref,disk);
+ pp_disk_drop(&ref);
+ return err;
 }
 /* Ordinary dm_destroy waits for these transient holders before unregistering
  * disks. Never retain a DM holder in active/failed state: removal must work. */
@@ -253,15 +266,18 @@ static int commit(bool seal)
   d->preparing=md;
   d->published=dm_disk(md);
   get_device(disk_to_dev(d->published));
-  mutex_lock(&d->published->open_mutex);
-  d->saved_flags=d->published->flags;
+  err=pp_disk_hold(d->published,&d->ref);
+  if (err) goto fail;
+  d->ref_held=true;
+  pp_disk_lock(&d->ref,d->published);
+  pp_disk_scan_save(d->published,&d->scan);
   err=(disk_devt(d->published)!=d->dev ||
        queue_logical_block_size(d->published->queue)!=d->metadata_lbs ||
-       !(d->saved_flags & GENHD_FL_NO_PART) ||
+       !pp_disk_scan_suppressed(d->published) ||
        disk_to_dev(d->published)->parent ||
        !device_is_registered(disk_to_dev(d->published)) ||
-       test_bit(GD_DEAD,&d->published->state)) ? -EINVAL : 0;
-  mutex_unlock(&d->published->open_mutex);
+       pp_disk_dead(d->published)) ? -EINVAL : 0;
+  pp_disk_unlock(&d->ref,d->published);
   if (err) goto fail;
  }
  list_for_each_entry(e,&items,entry) {
@@ -270,12 +286,12 @@ static int commit(bool seal)
   e->pinned=true;
   e->file=pp_bdev_open_ro(e->dev);
   if (IS_ERR(e->file)) { err=PTR_ERR(e->file); e->file=NULL; goto fail; }
-  if (e->hide && (!bdev_is_partition(pp_bdev(e->file)) || !pp_bdev(e->file)->bd_meta_info)) {
+  if (e->hide && (!bdev_is_partition(pp_bdev(e->file)) || !pp_bdev_info(pp_bdev(e->file)))) {
    err=-EINVAL; goto fail;
   }
   e->whole=pp_bdev_open_ro(disk_devt(pp_bdev(e->file)->bd_disk));
   if (IS_ERR(e->whole)) { err=PTR_ERR(e->whole); e->whole=NULL; goto fail; }
-  if (e->hide) memcpy(e->name,pp_bdev(e->file)->bd_meta_info->volname,sizeof(e->name));
+  if (e->hide) memcpy(e->name,pp_bdev_info(pp_bdev(e->file))->volname,sizeof(e->name));
  }
  list_for_each_entry(d,&disk_items,entry) {
   err=prepare_anchor(d); if (err) goto fail;
@@ -285,14 +301,14 @@ static int commit(bool seal)
   err=seal_disk(pp_bdev(e->file)->bd_disk); if (err) goto fail;
  }
  list_for_each_entry(e,&items,entry) if (e->hide) {
-  pp_bdev(e->file)->bd_meta_info->volname[0]=0;
+  pp_bdev_info(pp_bdev(e->file))->volname[0]=0;
   e->hidden_changed=true;
-  kobject_uevent(&pp_bdev(e->file)->bd_device.kobj,KOBJ_CHANGE);
+  kobject_uevent(&pp_bdev_dev(pp_bdev(e->file))->kobj,KOBJ_CHANGE);
  }
  list_for_each_entry(d,&disk_items,entry) {
   if (!d->anchor_parent) continue;
   if (!device_is_registered(disk_to_dev(d->published)) ||
-      test_bit(GD_DEAD,&d->published->state) ||
+      pp_disk_dead(d->published) ||
       disk_to_dev(d->published)->parent) { err=-ENODEV; goto move_failed; }
   err=device_move(disk_to_dev(d->published),d->anchor_parent,DPM_ORDER_DEV_AFTER_PARENT);
   if (err) {
@@ -305,12 +321,12 @@ static int commit(bool seal)
   }
  }
  list_for_each_entry(d,&disk_items,entry)
-  if (test_bit(GD_DEAD,&d->published->state)) { err=-ENODEV; goto move_failed; }
+  if (pp_disk_dead(d->published)) { err=-ENODEV; goto move_failed; }
  /* No disk is scan-enabled until every ancestry move has succeeded. */
  list_for_each_entry(d,&disk_items,entry) {
-  mutex_lock(&d->published->open_mutex);
-  d->published->flags &= ~GENHD_FL_NO_PART;
-  mutex_unlock(&d->published->open_mutex);
+  pp_disk_lock(&d->ref,d->published);
+  pp_disk_scan_enable(d->published);
+  pp_disk_unlock(&d->ref,d->published);
  }
  active=true; sealed=seal;
  release_preparing();
@@ -437,12 +453,12 @@ static ssize_t pp_reset_store(struct config_item *i,const char *b,size_t n)
  if (!sysfs_streq(b,"1")) return -EINVAL;
  mutex_lock(&subsystem.su_mutex); mutex_lock(&lock);
  list_for_each_entry(d,&disk_items,entry) {
-  if (!d->published) continue;
-  mutex_lock(&d->published->open_mutex);
-  if (!test_bit(GD_DEAD,&d->published->state) || pp_disk_openers(d->published) ||
+  if (!d->published || !d->ref_held) continue;
+  pp_disk_lock(&d->ref,d->published);
+  if (!pp_disk_dead(d->published) || pp_disk_openers(&d->ref,d->published) ||
       device_is_registered(disk_to_dev(d->published)))
    err=-EBUSY;
-  mutex_unlock(&d->published->open_mutex);
+  pp_disk_unlock(&d->ref,d->published);
   if (err) break;
  }
  if (!err)

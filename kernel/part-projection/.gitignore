@@ -3,5 +3,6 @@
 /*.ko
 /*.mod
 /*.mod.c
+/*.lds
 /Module.symvers
 /modules.order

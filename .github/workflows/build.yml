@@ -19,7 +19,7 @@ on:
         type: string
         default: android16-6.12
       generation:
-        description: Exact KMI generation for the selected branch (11, 6, or 5 for the pinned targets)
+        description: Exact KMI generation for the selected branch (9, 8, 11, 8, 6, or 5 for the pinned targets)
         required: true
         type: number
         default: 6

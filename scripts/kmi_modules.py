@@ -293,12 +293,22 @@ def kmi_identity(source: Path, branch: str, generation: int) -> Kmi:
     return {"branch": branch, "generation": generation}
 
 
-def clang_version(source: Path) -> str:
-    """Return the exact compiler revision declared by the ACK source."""
+def clang_version(source: Path, fallback: str | None = None) -> str:
+    """Return the exact compiler revision declared by the ACK source.
+
+    A pinned image may omit ``build.config.constants`` and therefore declare no
+    ``CLANG_VERSION``. The target table then supplies the revision as
+    ``fallback``; the build still verifies that the selected compiler's version
+    line contains it, so an unverified compiler cannot be used.
+    """
     constants = "\n".join((source / name).read_text()
                           for name in IDENTITY_FILES if (source / name).is_file())
     versions = set(re.findall(r"^CLANG_VERSION=[\"']?([A-Za-z0-9._-]+)[\"']?\s*$",
                               constants, re.MULTILINE))
+    if not versions and fallback:
+        # The target table spells the directory as ``clang-<rev>`` while the
+        # source and ``clang --version`` use the bare ``<rev>`` token.
+        return fallback.removeprefix("clang-")
     require(len(versions) == 1, "compiler: source has missing or ambiguous CLANG_VERSION")
     return versions.pop()
 
@@ -511,7 +521,7 @@ def build(args: argparse.Namespace) -> ModuleReport:
     env = {key: value for key, value in os.environ.items() if not key.startswith(("CONFIG_", "KBUILD_")) and key not in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "KCFLAGS", "KCPPFLAGS", "CFLAGS_MODULE", "LDFLAGS_MODULE")}
     clang = shutil.which("clang", path=env.get("PATH"))
     require(clang is not None, "compiler: clang is absent from PATH")
-    expected_clang = clang_version(source)
+    expected_clang = clang_version(source, os.environ.get("DDK_CLANG") or None)
     clang_line = subprocess.check_output([clang, "--version"], text=True).splitlines()[0]
     require(expected_clang in clang_line,
             f"compiler: expected {expected_clang} from kernel source, got {clang_line}")

@@ -8,17 +8,18 @@ This document describes pinned build targets, caller-supplied builds, admission,
 
 | Branch | Generation | Image digest | Compiler | ABI dump |
 | --- | ---: | --- | --- | --- |
+| `android12-5.10` | 9 | `272ada1e61c525116032246df2a790d1ccec1804b7a9e0b09203c5e650dcb78e` | `clang-r416183b` | No published `abi.stg` |
 | `android13-5.15` | 8 | `9e68cd9fcab748584755d31ba88ef134efc938dbde17f258c2652315f6cd81cd` | `clang-r450784e` | No published `abi.stg` |
 | `android14-6.1` | 11 | `1dd6ac340b627a90a4031d6d0df6b129d8cc949b139fb56032c898f023d3d5d3` | `clang-r487747c` | No published `abi.stg` |
 | `android15-6.6` | 8 | `51159bc935c75a282fc65bc87e02f16bd098d1cdf55dc558c4fdd0fcf7a132e2` | `clang-r510928` | No published `abi.stg` |
 | `android16-6.12` | 6 | `fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee` | `clang-r536225` | `gki/aarch64/abi.stg` |
 | `android17-6.18` | 5 | `fb8b66200bf402cf65a751060fc1aa29524b9fa8840feef16c7b196a4f3f0e6e` | `clang-r584948c` | `gki/aarch64/abi.stg` |
 
-The generation number is the value the pinned source declares: 5.15, 6.1 and 6.6 declare it in `build.config.common` (8, 11 and 8), and 6.12 and 6.18 declare it in `build.config.constants` (6 and 5, the latter through its `bazel/constants.scl` symlink). The 5.15 and 6.6 digests come from the community manifest at `Shikochin/Droidspaces-LKM` `build/gki-targets.json` revision `8c14b35`. Their kernel versions are 5.15.202 and 6.6.127.
+The generation number is the value the pinned source declares: 5.10, 5.15, 6.1 and 6.6 declare it in `build.config.common` (9, 8, 11 and 8), and 6.12 and 6.18 declare it in `build.config.constants` (6 and 5, the latter through its `bazel/constants.scl` symlink). The 5.10 image has no `build.config.constants` and no `CLANG_VERSION` value, so `scripts/ddk-targets.sh` supplies `clang-r416183b`; the build still refuses a compiler whose version line does not contain that revision. The 5.10, 5.15 and 6.6 digests come from the community manifest at `Shikochin/Droidspaces-LKM` `build/gki-targets.json` revision `8c14b35`. Their kernel versions are 5.10.252, 5.15.202 and 6.6.127.
 
 The 6.18 image also contains an x86_64 ABI dump. Its prepared DDK output is arm64, so the canonical DDK lane does not build x86_64 modules. Use caller-supplied matching output for x86_64.
 
-The 5.15, 6.1 and 6.6 images have no published ABI dump. Admission therefore uses that image's `Module.symvers` and `System.map`. A module-layout CRC from that output does not establish compatibility with another kernel. The image and its compiler are build inputs, not a device-support claim. The same rule applies to the other targets: no target is device-qualified by this build tooling.
+The 5.10, 5.15, 6.1 and 6.6 images have no published ABI dump. Admission therefore uses that image's `Module.symvers` and `System.map`. A module-layout CRC from that output does not establish compatibility with another kernel. The image and its compiler are build inputs, not a device-support claim. The same rule applies to the other targets: no target is device-qualified by this build tooling.
 
 These rows identify pinned inputs. They do not record completed builds. A per-module build can report an admitted result for an individual module. Candidate packaging needs both modules for the same branch, generation, and architecture.
 
@@ -49,7 +50,7 @@ The bootstrap accepts only targets in the pinned table. It records the image dig
 
 ## Kernel-line ports
 
-Both modules support the five pinned lines and keep the line interfaces out of the shared functional core.
+Both modules support the six pinned lines and keep the line interfaces out of the shared functional core. The 5.10 ports are real pre-rework adapters, not aliases: `part-projection` retains a `bdget_disk()` reference to the whole block device (a reference, not an opener), locks that device's `bd_mutex`, reads its `bd_openers`, treats `GENHD_FL_UP` as the dead flag, iterates partitions with `disk_part_iter_*`, and enables scanning through `GENHD_FL_EXT_DEVT` with `GENHD_FL_NO_PART_SCAN` cleared; `dm-thin-pool` declares its 5.10 metadata mode, status mapping, wait test, bioset allocator and kcopyd declaration. See the module provenance files for the source citations.
 
 | Module | Per-line inputs | Shared core |
 | --- | --- | --- |
@@ -169,6 +170,8 @@ To check a source-and-binary archive:
 sha256sum --check out/build-matrix/release/android16-6.12-6/aarch64.tar.gz.sha256
 tar -tzf out/build-matrix/release/android16-6.12-6/aarch64.tar.gz | head
 ```
+
+The candidate workflows set `STRIP_DEBUG=1` for their build step, so the modules they upload and package are stripped and each archive carries the original bytes in `provenance/<module>.ko.debug`. To reproduce that locally, set the same variable on a fresh `OUT_DIR`.
 
 Set `STRIP_DEBUG=1` on a fresh build to strip debug sections before admission. Confirm the shipped `.ko` has no `.debug_*` sections, still has `.symtab`, relocations, and `.BTF` when the build produced BTF, and has a matching `provenance/<module>.ko.debug` hash. A signed module is refused rather than altered.
 
