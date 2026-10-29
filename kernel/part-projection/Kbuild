@@ -2,3 +2,5 @@
 obj-m := part-projection.o
 part-projection-y := configfs.o target.o
 ccflags-y += -I$(src)/../../include
+# bdev.h selects abi/6.1, abi/6.12 or abi/6.18 from the kernel version of this
+# build. Only the functional core is shared; each line port owns its ABI.

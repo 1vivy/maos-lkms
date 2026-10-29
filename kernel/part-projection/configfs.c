@@ -439,7 +439,7 @@ static ssize_t pp_reset_store(struct config_item *i,const char *b,size_t n)
  list_for_each_entry(d,&disk_items,entry) {
   if (!d->published) continue;
   mutex_lock(&d->published->open_mutex);
-  if (!test_bit(GD_DEAD,&d->published->state) || disk_openers(d->published) ||
+  if (!test_bit(GD_DEAD,&d->published->state) || pp_disk_openers(d->published) ||
       device_is_registered(disk_to_dev(d->published)))
    err=-EBUSY;
   mutex_unlock(&d->published->open_mutex);
@@ -475,5 +475,8 @@ static void __exit fini(void) { configfs_unregister_subsystem(&subsystem); pp_ta
 module_init(init); module_exit(fini);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("DM-composed partition publication and endpoint namespace controls ABI6");
+/* The selected abi/<line> port is visible in .modinfo, so a built artifact
+ * states which kernel-line interface it was compiled against. */
+MODULE_INFO(part_projection_bdev_abi, PP_BDEV_ABI_LINE);
 #include "egysk_lkm.h"
 EGYSK_LKM_METADATA("part-projection", "3", "6", "1");

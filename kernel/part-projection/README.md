@@ -78,6 +78,14 @@ There is no privileged unseal shortcut.
 
 ## Build and evidence
 
+`bdev.h` selects a block-device port per kernel line under `abi/`: `abi/5.15`
+and `abi/6.1` use the legacy `block_device` open, `abi/6.6` uses
+`bdev_open_by_dev`/`bdev_release`, and `abi/6.12` and `abi/6.18` select the
+shared file-based port in `abi/file-bdev.h`. A build against an unported line
+stops with an error. The selected line appears as the
+`part_projection_bdev_abi` `.modinfo` entry (`5.15`, `6.1`, `6.6`, `6.12` or
+`6.18`).
+
 The root exact-KMI admission checks imports against the target `System.map` and KMI export list. Private imports require a compatible loader that prebinds them or real kernel exports. A present `module_layout` version record must match the published KMI CRC. Other `Module.symvers` CRCs are not compared. See the root README for admission and build commands.
 
 Build and admission checks do not qualify phone behavior. They do not establish multi-disk busy teardown, reload, reset, enforcing policy, or physical-device safety. No physical GPT write is part of this module's contract.

@@ -14,6 +14,12 @@ Two profiles:
 * ``generated`` - every other supported line stages that line's own kernel
   source and applies the port programme below.
 
+Each line names its profile, source order and version-specific edits in
+``abi/<line>/port.py``.  Shared transformations stay in this file and run once
+per line, so no core edit is duplicated per kernel line.  The whole ``abi/``
+tree is staged next to the sources, so a prepared tree reproduces the policy
+that produced it.
+
 The programme is a list of strict text edits, not a patch applied with fuzz.
 Each edit must match exactly the declared number of times. A kernel line that
 changed one of these regions fails closed and names the edit, so no build
@@ -30,32 +36,28 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+from types import ModuleType
 
 MODULE_DIR = Path(__file__).resolve().parent
 
 SCHEMA_VERSION = 1
 MODULE_NAME = "dm-thin-pool"
 
-# Lines whose block layer defines BLK_STS_INVAL in include/linux/blk_types.h.
-# 6.1 does not, and its blk_errors[] table maps -EINVAL to BLK_STS_IOERR.
-INVAL_STATUS_LINES = frozenset({"6.18"})
+# Per-line ABI implementations under abi/<line>/port.py. Each names its
+# profile, edited sources and version-specific edits. Shared transformations
+# stay in this file, so no core edit is duplicated per kernel line.
+ABI_ROOT = MODULE_DIR / "abi"
+ABI_LINES = ("5.15", "6.1", "6.6", "6.12", "6.18")
 
 # Project sources under src/ that generated staging must copy from this tree.
 PROJECT_HEADERS = ("src/subsystems.h",)
-
-# Kernel lines with a port programme derived from the line's own source.
-GENERATED_LINES = frozenset({"6.1", "6.18"})
-# Kernel lines whose module sources are the vendored tree in this directory.
-VERIFIED_LINES = frozenset({"6.12"})
-# The verified tree is proven for exactly this branch. Another branch on the
-# same line needs its own generated programme or a fresh proof.
-VERIFIED_BRANCH = {"6.12": "android16-6.12"}
 
 DM_FILES = (
     "dm-thin.c",
@@ -258,16 +260,22 @@ def require_external_definition(source: Source, definition: str, what: str) -> N
 
 # ---------------------------------------------------------------- port programme
 
-def bufio_private_helpers(line: str) -> str:
+def bufio_private_helpers(inval_case: str, offline_available: bool,
+                          test_bit_acquire: bool) -> str:
     """Private helpers for the buffered I/O data path.
 
     The errno mapping follows the line's own ``blk_errors[]`` table.  For
     example, 6.1 has no ``BLK_STS_INVAL`` entry, so -EINVAL maps to
-    ``BLK_STS_IOERR`` there.  The helper must not name a status the line lacks.
+    ``BLK_STS_IOERR`` there, and 5.15 has no ``BLK_STS_OFFLINE``, so -ENODEV
+    maps to ``BLK_STS_IOERR``.  The helper must not name a status the line
+    lacks.  The selected ABI implementation supplies the -EINVAL case and
+    whether the line defines ``BLK_STS_OFFLINE``.
     """
-    inval = ""
-    if line in INVAL_STATUS_LINES:
-        inval = "\tcase -EINVAL:\n\t\treturn BLK_STS_INVAL;\n"
+    offline_case = (
+        "\tcase -ENODEV:\n\t\treturn BLK_STS_OFFLINE;\n"
+        if offline_available else ""
+    )
+    bit_test = "test_bit_acquire" if test_bit_acquire else "test_bit"
     return f"""/*
  * Private copies of kernel-internal helpers.  The module must not import a
  * non-exported block-layer internal, so the two helpers the buffered I/O data
@@ -290,9 +298,7 @@ static blk_status_t thinpool_errno_to_blk_status(int error)
 		return BLK_STS_DEV_RESOURCE;
 	case -EAGAIN:
 		return BLK_STS_AGAIN;
-	case -ENODEV:
-		return BLK_STS_OFFLINE;
-{inval}	default:
+{offline_case}{inval_case}	default:
 		return BLK_STS_IOERR;
 	}}
 }}
@@ -306,7 +312,7 @@ static int thinpool_bit_wait_io(struct wait_bit_key *key, int mode)
 static int thinpool_wait_on_bit_io(unsigned long *word, int bit, unsigned int mode)
 {{
 	might_sleep();
-	if (!test_bit_acquire(bit, word))
+	if (!{bit_test}(bit, word))
 		return 0;
 
 	return out_of_line_wait_on_bit(word, bit, thinpool_bit_wait_io, mode);
@@ -455,7 +461,7 @@ THIN_CTR_LOOKUP_NEW = """	tc->pool = __pool_table_lookup_dev(tc->pool_dev->bdev-
 """
 
 
-def port_thin(source: Source, line: str) -> None:
+def port_thin(source: Source, abi: ModuleType) -> None:
     source.once(
         '#include "dm-thin-metadata.h"\n',
         '#include "subsystems.h"\n#include "dm-thin-metadata.h"\n',
@@ -491,6 +497,16 @@ def port_thin(source: Source, line: str) -> None:
         21,
         "pool name in diagnostics",
     )
+    # The 5.15 discard passdown path names the pool through tc->pool.  Each
+    # line declares how many such sites its source has; every site must match
+    # exactly once, so a changed source fails staging instead of keeping a
+    # kernel-internal pool_md reference.
+    for _ in range(abi.POOL_NAME_TC_USES):
+        source.once(
+            "dm_device_name(tc->pool->pool_md)",
+            "tc->pool->name",
+            "pool name in thin discard diagnostics",
+        )
     source.once(
         """/*
  * A global list of pools that uses a struct mapped_device as a key.
@@ -759,32 +775,11 @@ int __init thinpool_private_thin_init(void)
         "",
         "composed module carries no module_init or module_exit",
     )
-    # The proven 6.12 vendor tree and upstream 6.18 both declare crypto
-    # passthrough. dm-table.c drops inline-encryption capabilities for a
-    # stacked device when a member target lacks the flag, and dm-thin keeps
-    # the bio crypt context across remap. 6.1 upstream predates the flag, so
-    # the port declares it there and asserts it elsewhere.
-    if line == "6.1":
-        source.once(
-            "\t\t    DM_TARGET_IMMUTABLE,\n",
-            "\t\t    DM_TARGET_IMMUTABLE | DM_TARGET_PASSES_CRYPTO,\n",
-            "pool target passes inline-encryption bios",
-        )
-        source.once(
-            'static struct target_type thin_target = {\n\t.name = "thin",\n',
-            'static struct target_type thin_target = {\n\t.name = "thin",\n'
-            "\t.features = DM_TARGET_PASSES_CRYPTO,\n",
-            "thin target passes inline-encryption bios",
-        )
-        metadata_mode = (
-            "\tmetadata_mode = FMODE_READ | "
-            "((pf.mode == PM_READ_ONLY) ? 0 : FMODE_WRITE);\n"
-        )
-    else:
-        metadata_mode = (
-            "\tmetadata_mode = BLK_OPEN_READ |\n"
-            "\t\t((pf.mode == PM_READ_ONLY) ? 0 : BLK_OPEN_WRITE);\n"
-        )
+    # The line file adds feature flags the line lacks.  A line that already
+    # declares them carries no edit here; REQUIRED_AFTER_PORT asserts both.
+    for old, new, what in abi.THIN_CRYPTO_EDITS:
+        source.once(old, new, what)
+    metadata_mode = abi.METADATA_MODE
     source.once(
         metadata_mode,
         ZERO_NEW_BLOCKS_POLICY + metadata_mode,
@@ -792,7 +787,7 @@ int __init thinpool_private_thin_init(void)
     )
 
 
-def port_bufio(source: Source, line: str) -> None:
+def port_bufio(source: Source, abi: ModuleType) -> None:
     source.once(
         "#include <linux/dm-bufio.h>\n",
         '#include "subsystems.h"\n#include <linux/dm-bufio.h>\n',
@@ -800,52 +795,33 @@ def port_bufio(source: Source, line: str) -> None:
     )
     source.once(
         '#define DM_MSG_PREFIX "bufio"\n',
-        bufio_private_helpers(line) + '\n#define DM_MSG_PREFIX "bufio"\n',
+        bufio_private_helpers(abi.BUFIO_ERRNO_INVAL_CASE,
+                              abi.BLK_STS_OFFLINE_AVAILABLE,
+                              abi.BUFIO_USES_TEST_BIT_ACQUIRE)
+        + '\n#define DM_MSG_PREFIX "bufio"\n',
         "private block-layer helpers",
     )
-    if line in INVAL_STATUS_LINES:
+    if abi.BUFIO_ERRNO_REQUIRES_INVAL:
         require("return BLK_STS_INVAL;" in source.text,
-                f"{source.path}: {line} defines BLK_STS_INVAL but the mapping omits it")
+                f"{source.path}: {abi.LINE} defines BLK_STS_INVAL but the mapping omits it")
     else:
         source.forbid("BLK_STS_INVAL",
-                      f"{line} has no BLK_STS_INVAL; the mapping must not name it")
+                      f"{abi.LINE} has no BLK_STS_INVAL; the mapping must not name it")
+    if abi.BLK_STS_OFFLINE_AVAILABLE:
+        require("return BLK_STS_OFFLINE;" in source.text,
+                f"{source.path}: {abi.LINE} defines BLK_STS_OFFLINE but the mapping omits it")
+    else:
+        source.forbid("BLK_STS_OFFLINE",
+                      f"{abi.LINE} has no BLK_STS_OFFLINE; the mapping must not name it")
     source.once(
         "\t\tb->end_io(b, errno_to_blk_status(r));\n",
         "\t\tb->end_io(b, thinpool_errno_to_blk_status(r));\n",
         "private errno mapping in the dm-io fallback",
     )
-    source.once(
-        "\tbio_uninit(bio);\n\tkfree(bio);\n",
-        "\tbio_put(bio);\n",
-        "bio_set completion frees with bio_put",
-    )
-    if line == "6.1":
-        source.once(
-            "\tbio = bio_kmalloc(vec_size, GFP_NOWAIT | __GFP_NORETRY | __GFP_NOWARN);\n",
-            "\tbio = bio_alloc_bioset(b->c->bdev, vec_size, op,\n"
-            "\t\t\t       GFP_NOWAIT | __GFP_NORETRY | __GFP_NOWARN,\n"
-            "\t\t\t       &dm_bufio_bioset);\n",
-            "use_bio allocates from the module bio_set",
-        )
-        source.once(
-            "\tbio_init(bio, b->c->bdev, bio->bi_inline_vecs, vec_size, op);\n",
-            "",
-            "BIO_SET allocation is already initialized",
-        )
-    elif line == "6.18":
-        source.once(
-            "\tbio = bio_kmalloc(1, GFP_NOWAIT);\n",
-            "\tbio = bio_alloc_bioset(b->c->bdev, 1, op, GFP_NOWAIT,\n"
-            "\t\t\t       &dm_bufio_bioset);\n",
-            "use_bio allocates from the module bio_set",
-        )
-        source.once(
-            "\tbio_init_inline(bio, b->c->bdev, 1, op);\n",
-            "",
-            "bio_alloc_bioset already initializes the bio",
-        )
-    else:  # pragma: no cover - guarded by the profile table
-        raise PortError(f"dm-bufio.c: no port programme for kernel line {line}")
+    for old, new, what in abi.BUFIO_BIO_COMPLETION_EDITS:
+        source.once(old, new, what)
+    for old, new, what in abi.BUFIO_BIO_ALLOC_EDITS:
+        source.once(old, new, what)
 
     source.once(
         "static struct workqueue_struct *dm_bufio_wq;\n",
@@ -893,36 +869,37 @@ def port_bufio(source: Source, line: str) -> None:
     )
 
 
-def port_kcopyd(source: Source, line: str) -> None:
+def port_kcopyd(source: Source, abi: ModuleType) -> None:
     require_external_definition(source, "int __init dm_kcopyd_init(void)\n",
                                 "kcopyd init linkage")
     require_external_definition(source, "void dm_kcopyd_exit(void)\n",
                                 "kcopyd exit linkage")
+    kind = abi.KCOPYD_SUBJOB_TYPE
     source.once(
-        """static unsigned int dm_get_kcopyd_subjob_size(void)
-{
-	unsigned int sub_job_size_kb;
+        f"""static {kind} dm_get_kcopyd_subjob_size(void)
+{{
+	{kind} sub_job_size_kb;
 
 	sub_job_size_kb = __dm_get_module_param(&kcopyd_subjob_size_kb,
 						DEFAULT_SUB_JOB_SIZE_KB,
 						MAX_SUB_JOB_SIZE_KB);
 
 	return sub_job_size_kb << 1;
-}
+}}
 """,
-        """static unsigned int dm_get_kcopyd_subjob_size(void)
-{
-	unsigned int sub_job_size_kb = READ_ONCE(kcopyd_subjob_size_kb);
+        f"""static {kind} dm_get_kcopyd_subjob_size(void)
+{{
+	{kind} sub_job_size_kb = READ_ONCE(kcopyd_subjob_size_kb);
 
 	return clamp(sub_job_size_kb, DEFAULT_SUB_JOB_SIZE_KB,
 		     MAX_SUB_JOB_SIZE_KB) << 1;
-}
+}}
 """,
         "sub-job size without __dm_get_module_param",
     )
 
 
-def port_dm_io(source: Source, line: str) -> None:
+def port_dm_io(source: Source, _abi: ModuleType) -> None:
     require_external_definition(source, "int __init dm_io_init(void)\n",
                                 "io init linkage")
     require_external_definition(source, "void dm_io_exit(void)\n",
@@ -935,7 +912,7 @@ def port_dm_io(source: Source, line: str) -> None:
     )
 
 
-def port_prison_v1(source: Source, line: str) -> None:
+def port_prison_v1(source: Source, _abi: ModuleType) -> None:
     source.once(
         '#include "dm.h"\n',
         '#include "subsystems.h"\n#include "dm.h"\n',
@@ -975,23 +952,112 @@ module_exit(dm_bio_prison_exit);
     )
 
 
-# (source path under src/, edit function) per kernel line.
-PROGRAMMES = {
-    "6.1": (
-        ("dm-thin.c", port_thin),
-        ("dm-bufio.c", port_bufio),
-        ("dm-kcopyd.c", port_kcopyd),
-        ("dm-io.c", port_dm_io),
-        ("dm-bio-prison-v1.c", port_prison_v1),
-    ),
-    "6.18": (
-        ("dm-thin.c", port_thin),
-        ("dm-bufio.c", port_bufio),
-        ("dm-kcopyd.c", port_kcopyd),
-        ("dm-io.c", port_dm_io),
-        ("dm-bio-prison-v1.c", port_prison_v1),
-    ),
+# Shared edit function per kernel source. Each ABI file lists the sources it
+# edits and their order; this table holds the single copy of each edit.
+SHARED_PORTS = {
+    "dm-thin.c": port_thin,
+    "dm-bufio.c": port_bufio,
+    "dm-kcopyd.c": port_kcopyd,
+    "dm-io.c": port_dm_io,
+    "dm-bio-prison-v1.c": port_prison_v1,
 }
+
+# Fields a generated-line ABI file must declare.
+GENERATED_ABI_FIELDS = (
+    "SOURCES",
+    "THIN_CRYPTO_EDITS",
+    "METADATA_MODE",
+    "POOL_NAME_TC_USES",
+    "BUFIO_ERRNO_INVAL_CASE",
+    "BUFIO_ERRNO_REQUIRES_INVAL",
+    "BLK_STS_OFFLINE_AVAILABLE",
+    "BUFIO_USES_TEST_BIT_ACQUIRE",
+    "BUFIO_BIO_ALLOC_EDITS",
+    "BUFIO_BIO_COMPLETION_EDITS",
+    "KCOPYD_SUBJOB_TYPE",
+)
+# Fields that hold ``(old, new, what)`` edit triples.
+ABI_EDIT_FIELDS = (
+    "THIN_CRYPTO_EDITS",
+    "BUFIO_BIO_ALLOC_EDITS",
+    "BUFIO_BIO_COMPLETION_EDITS",
+)
+
+
+def abi_lines() -> tuple[str, ...]:
+    """Return the supported lines, each backed by an ABI implementation."""
+    require(ABI_ROOT.is_dir(), f"ABI implementations are missing: {ABI_ROOT}")
+    present = {path.parent.name for path in ABI_ROOT.glob("*/port.py") if path.is_file()}
+    require(present == set(ABI_LINES),
+            "ABI implementations do not match the supported lines: "
+            f"found {', '.join(sorted(present)) or 'none'}; "
+            f"expected {', '.join(ABI_LINES)}")
+    return ABI_LINES
+
+
+def load_abi(line: str) -> ModuleType:
+    """Load one line's ABI implementation and check its declared contract."""
+    path = ABI_ROOT / line / "port.py"
+    require(path.is_file(), f"ABI implementation is missing: {path}")
+    spec = importlib.util.spec_from_file_location(
+        "thinpool_abi_" + line.replace(".", "_"), path
+    )
+    require(spec is not None and spec.loader is not None,
+            f"ABI implementation cannot load: {path}")
+    module = importlib.util.module_from_spec(spec)
+    # The ABI tree is source, not an installed package: never write caches
+    # into the module tree.
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    except Exception as error:
+        # An unloadable line file fails staging with its path, not a traceback.
+        raise PortError(f"{path}: cannot execute ABI implementation: {error}") from error
+    finally:
+        sys.dont_write_bytecode = previous
+    require(getattr(module, "LINE", None) == line,
+            f"{path}: LINE must be {line!r}")
+    profile = getattr(module, "PROFILE", None)
+    require(profile in ("verified", "generated"),
+            f"{path}: PROFILE must be 'verified' or 'generated', not {profile!r}")
+    if profile == "verified":
+        branch = getattr(module, "VERIFIED_BRANCH", None)
+        require(isinstance(branch, str) and branch,
+                f"{path}: verified ABI implementation needs a VERIFIED_BRANCH")
+        return module
+    missing = [name for name in GENERATED_ABI_FIELDS if not hasattr(module, name)]
+    require(not missing,
+            f"{path}: generated ABI implementation lacks {', '.join(missing)}")
+    sources = tuple(module.SOURCES)
+    require(sources and len(set(sources)) == len(sources),
+            f"{path}: SOURCES must be a non-empty, unique source list")
+    unknown = [name for name in sources if name not in SHARED_PORTS]
+    require(not unknown,
+            f"{path}: SOURCES names sources without a shared port: {', '.join(unknown)}")
+    require(isinstance(module.METADATA_MODE, str) and module.METADATA_MODE,
+            f"{path}: METADATA_MODE must be a non-empty string")
+    require(isinstance(module.BUFIO_ERRNO_INVAL_CASE, str),
+            f"{path}: BUFIO_ERRNO_INVAL_CASE must be a string")
+    require(isinstance(module.BUFIO_ERRNO_REQUIRES_INVAL, bool),
+            f"{path}: BUFIO_ERRNO_REQUIRES_INVAL must be a bool")
+    require(isinstance(module.POOL_NAME_TC_USES, int)
+            and not isinstance(module.POOL_NAME_TC_USES, bool)
+            and module.POOL_NAME_TC_USES >= 0,
+            f"{path}: POOL_NAME_TC_USES must be a nonnegative integer")
+    require(isinstance(module.BLK_STS_OFFLINE_AVAILABLE, bool),
+            f"{path}: BLK_STS_OFFLINE_AVAILABLE must be a bool")
+    require(isinstance(module.BUFIO_USES_TEST_BIT_ACQUIRE, bool),
+            f"{path}: BUFIO_USES_TEST_BIT_ACQUIRE must be a bool")
+    require(isinstance(module.KCOPYD_SUBJOB_TYPE, str) and module.KCOPYD_SUBJOB_TYPE,
+            f"{path}: KCOPYD_SUBJOB_TYPE must be a non-empty string")
+    for field in ABI_EDIT_FIELDS:
+        entries = tuple(getattr(module, field))
+        require(all(isinstance(entry, tuple) and len(entry) == 3
+                    and all(isinstance(part, str) for part in entry)
+                    for entry in entries),
+                f"{path}: {field} must contain (old, new, what) string triples")
+    return module
 
 
 # ------------------------------------------------------------------- inputs
@@ -1047,7 +1113,7 @@ def source_identity(source: Path, branch: str, generation: int) -> dict[str, obj
     }
 
 
-def validate_inputs(args: argparse.Namespace) -> tuple[Path, Path, str, tuple[int, int, int]]:
+def validate_inputs(args: argparse.Namespace) -> tuple[Path, Path, str, tuple[int, int, int], ModuleType]:
     source = Path(args.kernel_source).resolve(strict=True)
     output = Path(args.kernel_output).resolve(strict=True)
     require(source.is_dir(), f"kernel source is not a directory: {source}")
@@ -1073,21 +1139,23 @@ def validate_inputs(args: argparse.Namespace) -> tuple[Path, Path, str, tuple[in
             f"branch {args.branch} does not match kernel source {line}")
     require(args.arch in ("aarch64", "x86_64"), f"unsupported architecture: {args.arch}")
     require(args.generation >= 0, "generation must be nonnegative")
-    require(line in GENERATED_LINES or line in VERIFIED_LINES,
+    supported = abi_lines()
+    require(line in supported,
             f"unsupported kernel line {line}: no port programme (supported: "
-            f"{', '.join(sorted(GENERATED_LINES | VERIFIED_LINES))})")
-    if line in VERIFIED_LINES:
-        proven = VERIFIED_BRANCH[line]
+            f"{', '.join(sorted(supported))})")
+    abi = load_abi(line)
+    if abi.PROFILE == "verified":
+        proven = abi.VERIFIED_BRANCH
         require(args.branch == proven,
                 f"the verified sources are proven for {proven}, not {args.branch}")
-    if line in GENERATED_LINES:
+    else:
         for name in DM_FILES:
             path = source / "drivers/md" / name
             require(path.is_file(), f"kernel source is incomplete: missing {path.name}")
         require((source / PERSISTENT_DATA_DIR).is_dir(),
                 f"kernel source is incomplete: missing {PERSISTENT_DATA_DIR}")
     _ = source_identity(source, args.branch, args.generation)
-    return source, output, line, version
+    return source, output, line, version, abi
 
 
 def require_absent_target(target: Path) -> None:
@@ -1100,9 +1168,10 @@ def require_absent_target(target: Path) -> None:
 
 # ----------------------------------------------------------------- staging
 
-def stage_generated(source: Path, line: str, staged: Path) -> tuple[dict[str, str], dict[str, str], list[dict[str, object]]]:
+def stage_generated(source: Path, staged: Path,
+                    abi: ModuleType) -> tuple[dict[str, str], dict[str, str], list[dict[str, object]]]:
     kernel_files: dict[str, str] = {}
-    programme = dict(PROGRAMMES[line])
+    programme = tuple((name, SHARED_PORTS[name]) for name in abi.SOURCES)
     edits: list[dict[str, object]] = []
     sources: dict[str, Source] = {}
 
@@ -1122,8 +1191,8 @@ def stage_generated(source: Path, line: str, staged: Path) -> tuple[dict[str, st
             f"src/persistent-data/{path.name}", path.read_text()
         )
 
-    for name, port in programme.items():
-        port(sources[f"src/{name}"], line)
+    for name, port in programme:
+        port(sources[f"src/{name}"], abi)
         edits.extend(sources[f"src/{name}"].edits)
 
     for name, text in sources.items():
@@ -1160,6 +1229,26 @@ def stage_verified(staged: Path) -> dict[str, str]:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
         module_files[relative.as_posix()] = digest(path)
+    return module_files
+
+
+def stage_abi(staged: Path) -> dict[str, str]:
+    """Copy the ABI tree into the staged module directory.
+
+    A prepared tree must reproduce the policy that produced it, and the
+    release bundle copies only the staged tree.  The scripts run at stage
+    time, so Kbuild ignores them.  Caches from a local run are not source.
+    """
+    module_files: dict[str, str] = {}
+    for path in sorted(ABI_ROOT.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        relative = path.relative_to(MODULE_DIR)
+        target = staged / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+        module_files[relative.as_posix()] = digest(path)
+    require(module_files, f"ABI tree has no files to stage: {ABI_ROOT}")
     return module_files
 
 
@@ -1382,7 +1471,7 @@ def main(argv: list[str] | None = None) -> int:
 
     temporary: Path | None = None
     try:
-        source, output, line, version = validate_inputs(args)
+        source, output, line, version, abi = validate_inputs(args)
         target = Path(args.output).resolve()
         require(target != MODULE_DIR.resolve(),
                 "the staging output must not be this source directory")
@@ -1396,7 +1485,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         staged = temporary
 
-        if line in VERIFIED_LINES:
+        if abi.PROFILE == "verified":
             module_files = stage_verified(staged)
             edits: list[dict[str, object]] = []
             kernel_files = {
@@ -1405,13 +1494,16 @@ def main(argv: list[str] | None = None) -> int:
             }
             profile = "verified"
         else:
-            kernel_files, module_files, edits = stage_generated(source, line, staged)
+            kernel_files, module_files, edits = stage_generated(source, staged, abi)
             profile = "generated"
 
+        # The prepared tree must carry the ABI policy that produced it. The
+        # release bundle copies only this tree, so the port scripts travel too.
+        module_files.update(stage_abi(staged))
         common = common_files(staged)
-        # Module inputs: the verified tree plus the shared files for 6.12, or
-        # the project headers plus the shared files for a generated tree (its
-        # device-mapper sources are kernel inputs).
+        # Module inputs: the staged kernel or verified tree, the ABI tree and
+        # the shared files. Generated device-mapper and persistent-data sources
+        # remain kernel inputs.
         module_inputs = dict(module_files)
         module_inputs.update(common)
         check_members(staged)

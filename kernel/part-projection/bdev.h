@@ -1,36 +1,33 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Block-device handle portability for the pinned DDK trees.
+/* Block-device ABI selection for the pinned DDK kernel lines.
  *
- * v6.12 and v6.18 open block devices as files: bdev_file_open_by_dev(),
- * file_bdev() and bdev_fput(). Per-bdev read-only policy is the atomic
- * BD_READ_ONLY flag. v6.1 opens a plain struct block_device with
- * blkdev_get_by_dev()/blkdev_put() and stores read-only policy in
- * bdev->bd_read_only, which bdev_read_only() consults for writes and mmap.
- * Both generations give the same handle ownership: one open reference that
- * the module releases once. Neither generation rejects a write open early,
- * so the read-only state is enforced by blkdev_write_iter() in both trees.
- * Trees between these generations are not claimed or tested. */
+ * The functional core (configfs.c, target.c) uses only the pp_bdev_* and
+ * pp_disk_openers() interface below. Each supported kernel line has its own
+ * port under abi/: that port owns the open, close, handle type, read-only
+ * mechanism and open-count accessor of its line, and states the line it
+ * applies to. This file selects a port from the version of the kernel headers
+ * being built against. It does not translate one line's code for another line,
+ * and it refuses lines that nobody ported, so an unported tree fails at compile
+ * time instead of silently using a wrong interface.
+ *
+ * Supported lines: 5.15, 6.1, 6.6, 6.12, 6.18. */
 #ifndef PART_PROJECTION_BDEV_H
 #define PART_PROJECTION_BDEV_H
-#include <linux/fs.h>
-#include <linux/blkdev.h>
-#if defined(BLK_OPEN_READ)
-typedef struct file pp_bdev_handle;
-#define PP_OPEN_READ BLK_OPEN_READ
-static inline pp_bdev_handle *pp_bdev_open_ro(dev_t dev) { return bdev_file_open_by_dev(dev,BLK_OPEN_READ,NULL,NULL); }
-static inline void pp_bdev_close(pp_bdev_handle *h) { bdev_fput(h); }
-static inline struct block_device *pp_bdev(pp_bdev_handle *h) { return file_bdev(h); }
-static inline void pp_bdev_ro(struct block_device *bdev,bool ro)
-{ if (ro) bdev_set_flag(bdev,BD_READ_ONLY); else bdev_clear_flag(bdev,BD_READ_ONLY); }
+
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
+#include "abi/5.15/bdev.h"
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
+#include "abi/6.1/bdev.h"
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 7, 0)
+#include "abi/6.6/bdev.h"
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
+#include "abi/6.12/bdev.h"
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 19, 0)
+#include "abi/6.18/bdev.h"
 #else
-typedef struct block_device pp_bdev_handle;
-#define PP_OPEN_READ FMODE_READ
-static inline pp_bdev_handle *pp_bdev_open_ro(dev_t dev) { return blkdev_get_by_dev(dev,FMODE_READ,NULL); }
-static inline void pp_bdev_close(pp_bdev_handle *h) { blkdev_put(h,FMODE_READ); }
-static inline struct block_device *pp_bdev(pp_bdev_handle *h) { return h; }
-/* v6.1 has no exported per-bdev setter. Its BLKROSET handler assigns this
- * policy field with the same plain store, and bdev_read_only() reads it in
- * the write and mmap paths. */
-static inline void pp_bdev_ro(struct block_device *bdev,bool ro) { bdev->bd_read_only=ro; }
+#error "part-projection: no block-device port for this kernel line; supported lines are 5.15, 6.1, 6.6, 6.12 and 6.18"
 #endif
-#endif
+
+#endif /* PART_PROJECTION_BDEV_H */
