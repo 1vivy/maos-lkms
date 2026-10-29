@@ -38,6 +38,7 @@ jobs:
       - name: Build and admit exact independent LKMs
         env:
           OUT_DIR: out/build-matrix
+          STRIP_DEBUG: '1'
           BRANCH: ${{ inputs.branch }}
           GENERATION: ${{ inputs.generation }}
           KMI_SRC: ${{ inputs.kmi_src }}

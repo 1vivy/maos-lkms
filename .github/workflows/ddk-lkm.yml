@@ -21,6 +21,7 @@ jobs:
       - name: Build and admit the pinned arm64 target
         env:
           OUT_DIR: out/build-matrix
+          STRIP_DEBUG: '1'
           BRANCH: ${{ inputs.branch }}
           GENERATION: ${{ inputs.generation }}
         run: sh scripts/build-ddk-lkms.sh "$BRANCH" "$GENERATION"
