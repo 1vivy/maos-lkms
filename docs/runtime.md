@@ -22,7 +22,7 @@ even if userspace already removed another disk. Userspace must reread every GPT.
 See the [part-projection ABI](../kernel/part-projection/README.md).
 
 The module reports the kernel-line port it was compiled with as the
-`part_projection_bdev_abi` `.modinfo` entry (`5.15`, `6.1`, `6.6`, `6.12`, or
+`part_projection_bdev_abi` `.modinfo` entry (`5.10`, `5.15`, `6.1`, `6.6`, `6.12`, or
 `6.18`). A consumer can read it with `modinfo`. It describes the build, not the
 running kernel.
 

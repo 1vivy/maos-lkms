@@ -31,6 +31,6 @@ This repository owns module source, build, and KMI admission. It does not own PI
 - [Build and KMI admission](build.md)
 - [Design rationale](design.md)
 - [Runtime contracts](runtime.md)
-- [Verification boundaries](build.md#verification-boundary)
+- [Verification boundaries](build.md#verification-commands-and-limits)
 - [`dm-thin-pool`](../kernel/dm-thin-pool/README.md)
 - [`part-projection`](../kernel/part-projection/README.md)

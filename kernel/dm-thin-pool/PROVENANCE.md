@@ -408,13 +408,16 @@ notices.
 - 5.15 `drivers/md/dm-kcopyd.c:37-44` declares the sub-job size in `unsigned`;
   6.6 and later lines use `unsigned int`. The shared edit reproduces the
   line's own declaration.
-- No generated tree is built, admitted, loaded or exercised. Snapshots,
-  discard, ENOSPC, suspend/resume and metadata recovery behavior on 5.10, 5.15,
-  6.1, 6.6 and 6.18 are unproven. The 5.10 source staging against the pinned
-  `android12-5.10` image satisfied the counted-anchor, required/forbidden
-  token, export-rename, Kbuild-member and entry-point checks; that is a source
-  claim only. A build and the KMI admission of each exact artifact are the next
-  required evidence.
+- Build and admission records are retained for the six pinned targets.
+  `out/final6-510`, `final6-515`, `final6-61`, `final6-66`, `final6-612` and
+  `final6-618` each contain a complete accepted two-module set with the image
+  digest, compiler and final module hashes. These records cover the recorded
+  candidate bytes and DDK inputs only. They do not name a source commit.
+  Snapshots, discard, ENOSPC, suspend/resume and metadata recovery behavior on
+  5.10, 5.15, 6.1, 6.6 and 6.18 are unproven. The 5.10 source staging against
+  the pinned `android12-5.10` image satisfied the counted-anchor,
+  required/forbidden token, export-rename, Kbuild-member and entry-point
+  checks. That result is a source claim.
 
 ## Module integration
 

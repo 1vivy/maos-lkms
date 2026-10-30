@@ -23,14 +23,22 @@ The 5.10, 5.15, 6.1 and 6.6 images have no published ABI dump. Admission therefo
 
 These rows identify pinned inputs. They do not record completed builds. A per-module build can report an admitted result for an individual module. Candidate packaging needs both modules for the same branch, generation, and architecture.
 
-Build one module or the complete arm64 set:
+Retained records under `out/final6-510`, `out/final6-515`, `out/final6-61`, `out/final6-66`, `out/final6-612` and `out/final6-618` report complete accepted two-module sets for the six pinned targets on `aarch64`. Each set records its image digest and compiler, and the ABI hash where the image publishes one. Each release manifest labels the bundle `build-admission-and-source-candidate` and sets `device_qualified` to false. Their archives carry `provenance/<module>.ko.debug`, so the candidate modules had only debug sections stripped. The workspace inventory `artifacts/maos/2026-10-29-userspace-efvs-six-gki/package.sha256.json` records the packaged bytes. These records establish build and admission of the recorded candidate bytes against the recorded image inputs. They do not name a source commit. They do not establish module loading, runtime behavior, or device support.
+
+Build one module:
 
 ```sh
 OUT_DIR=out/build-matrix-6.12-dm sh scripts/build-ddk-lkms.sh android16-6.12 6 dm-thin-pool
-OUT_DIR=out/build-matrix-6.12 sh scripts/build-ddk-lkms.sh android16-6.12 6
+```
+
+Build the complete arm64 set for one pinned target:
+
+```sh
+OUT_DIR=out/build-matrix-5.10 sh scripts/build-ddk-lkms.sh android12-5.10 9
 OUT_DIR=out/build-matrix-5.15 sh scripts/build-ddk-lkms.sh android13-5.15 8
 OUT_DIR=out/build-matrix-6.1 sh scripts/build-ddk-lkms.sh android14-6.1 11
 OUT_DIR=out/build-matrix-6.6 sh scripts/build-ddk-lkms.sh android15-6.6 8
+OUT_DIR=out/build-matrix-6.12 sh scripts/build-ddk-lkms.sh android16-6.12 6
 OUT_DIR=out/build-matrix-6.18 sh scripts/build-ddk-lkms.sh android17-6.18 5
 ```
 
@@ -161,7 +169,7 @@ shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh \
   kernel/dm-thin-pool/build.sh
 ```
 
-Run a pinned full arm64 build with one of the five branch-generation pairs in the table. Run a single-module command when only that module needs validation. The build needs the matching image or exact caller-supplied source and output and the selected clang.
+Run a pinned full arm64 build with one of the six branch-generation pairs in the table. Run a single-module command when only that module needs validation. The build needs the matching image or exact caller-supplied source and output and the selected clang.
 
 To check a source-and-binary archive:
 

@@ -134,6 +134,8 @@ symbols are all exported in the target `Module.symvers` and present in
 `System.map`, and it has no versioned records. Regression builds with the same
 module sources were admitted for `android13-5.15` gen 8, `android14-6.1` gen 11,
 `android15-6.6` gen 8, `android16-6.12` gen 6 and `android17-6.18` gen 5.
+Retained accepted sets also cover `android12-5.10` gen 9; see the root build
+document for the six recorded targets.
 
 The root exact-KMI admission checks imports against the target `System.map` and KMI export list. Private imports require a compatible loader that prebinds them or real kernel exports. A present `module_layout` version record must match the published KMI CRC. Other `Module.symvers` CRCs are not compared. See the root README for admission and build commands and PROVENANCE.md for the pinned digests and results.
 

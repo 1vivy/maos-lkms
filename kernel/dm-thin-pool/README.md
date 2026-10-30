@@ -204,16 +204,19 @@ and the full dm-thin behavior matrix in QEMU (snapshots, discard, partial-block
 zeroing, `dm-default-key` ciphertext equality, ENOSPC modes, forced-reset
 metadata recovery).
 
-The 5.10, 5.15, 6.1, 6.6 and 6.18 sources are staged by `prepare.py` and are
-not built, admitted, loaded or exercised yet. A staged tree is a source claim,
-not a behavior claim. The 5.10 staging was established against the pinned
+The 5.10, 5.15, 6.1, 6.6 and 6.18 sources are staged by `prepare.py`.
+Retained records under `out/final6-*` report accepted builds and admissions of
+both modules for the six pinned targets. Those records cover build and
+admission of the recorded candidate bytes only. They do not establish module
+load or behavior. A staged tree is a source claim, not a behavior claim. The
+5.10 staging was established against the pinned
 `android12-5.10` 5.10.252 DDK image; its `PROVENANCE.json` records the exact
 source hashes and all 60 counted edits. The staged 6.18 `src/dm-thin.c` keeps
 the upstream `DM_TARGET_PASSES_CRYPTO` flags. The 5.10, 5.15, 6.1 and 6.6 ABI
 files add the same flags, because those lines' `dm-table.c` drops
 inline-encryption capabilities for a stack whose target lacks the flag and the
 thin data path keeps the bio crypt context. The encrypted 5.10, 5.15, 6.1 and
-6.6 stacks are unproven until each lane builds and runs the encryption checks.
+6.6 stacks are unproven until each lane runs the encryption checks.
 
 ## Product build gates
 

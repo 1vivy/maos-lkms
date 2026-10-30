@@ -4,11 +4,11 @@ Use the shared `asd-ste100` skill for documentation and the shared `engineering-
 
 ## Build and host checks
 
-- Host admission contracts: `python3 -m unittest scripts.test_kmi_modules`
+- Host admission contracts: `python3 -m unittest scripts.test_kmi_modules scripts.test_module_set scripts.test_source_manifest`
 - Canonical arm64 DDK build and admission: `sh scripts/build-ddk-lkms.sh android16-6.12 6`
 - Caller-supplied exact-kernel build and admission: `sh scripts/build-lkms.sh <branch> <generation> <aarch64|x86_64> <kernel-source> <complete-kernel-output>`
 - Pinned clang bootstrap for the caller-supplied lane: `sh scripts/bootstrap-ddk-clang.sh`
-- Owned shell entrypoint check: `shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh scripts/bootstrap-ddk-clang.sh kernel/dm-thin-pool/build.sh`
+- Owned shell entrypoint check: `shellcheck scripts/build-lkms.sh scripts/build-ddk-lkms.sh scripts/bootstrap-ddk-clang.sh scripts/ddk-targets.sh scripts/out-dir.sh kernel/dm-thin-pool/build.sh`
 
 The canonical lane needs Docker. The caller-supplied lane also needs complete matching kernel source and output and the pinned DDK clang. See the root README for required output files and inputs. Generated files belong under ignored `out/`.
 

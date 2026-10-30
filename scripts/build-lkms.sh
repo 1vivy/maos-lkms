@@ -93,6 +93,25 @@ fi
 failures=
 strip_args=
 if [ "${STRIP_DEBUG:-0}" = 1 ]; then strip_args=--strip-debug; fi
+# One build and one verify call serve both lanes; KMI_ABI adds the published dump.
+run_build() {
+    if [ -n "${KMI_ABI:-}" ]; then
+        set -- --kmi-abi "$KMI_ABI" "$@"
+    fi
+    # shellcheck disable=SC2086
+    python3 "$root/scripts/kmi_modules.py" build --module-dir "$staged_source" --module "$module" \
+        --branch "$branch" --generation "$generation" --arch "$arch" --kmi-src "$source" \
+        --kmi-out "$output" --output-dir "$module_destination" --jobs "${JOBS:-4}" "$@" $strip_args
+}
+
+run_verify() {
+    if [ -n "${KMI_ABI:-}" ]; then
+        set -- --kmi-abi "$KMI_ABI" "$@"
+    fi
+    python3 "$root/scripts/kmi_modules.py" verify --branch "$branch" --generation "$generation" \
+        --arch "$arch" --kmi-out "$output" --module "$module_destination/$module.ko" "$@"
+}
+
 for module do
     module_source=$root/kernel/$module
     prepared_source=0
@@ -135,36 +154,15 @@ for module do
         fi
     fi
     mkdir -p "$module_destination"
-    if [ -n "${KMI_ABI:-}" ]; then
-        # shellcheck disable=SC2086
-        if ! python3 "$root/scripts/kmi_modules.py" build --module-dir "$staged_source" --module "$module" \
-            --branch "$branch" --generation "$generation" --arch "$arch" --kmi-src "$source" \
-            --kmi-out "$output" --kmi-abi "$KMI_ABI" --output-dir "$module_destination" \
-            --jobs "${JOBS:-4}" $strip_args; then
-            echo "$module: build or admission failed" >&2
-            failures="${failures}${failures:+,}$module"
-            continue
-        fi
-        if ! python3 "$root/scripts/kmi_modules.py" verify --branch "$branch" --generation "$generation" \
-            --arch "$arch" --kmi-out "$output" --kmi-abi "$KMI_ABI" --module "$module_destination/$module.ko"; then
-            echo "$module: final-byte admission failed" >&2
-            failures="${failures}${failures:+,}$module"
-            continue
-        fi
-    else
-        # shellcheck disable=SC2086
-        if ! python3 "$root/scripts/kmi_modules.py" build --module-dir "$staged_source" --module "$module" \
-            --branch "$branch" --generation "$generation" --arch "$arch" --kmi-src "$source" \
-            --kmi-out "$output" --output-dir "$module_destination" --jobs "${JOBS:-4}" $strip_args; then
-            echo "$module: build or admission failed" >&2
-            failures="${failures}${failures:+,}$module"
-            continue
-        fi
-        if ! python3 "$root/scripts/kmi_modules.py" verify --branch "$branch" --generation "$generation" --arch "$arch" --kmi-out "$output" --module "$module_destination/$module.ko"; then
-            echo "$module: final-byte admission failed" >&2
-            failures="${failures}${failures:+,}$module"
-            continue
-        fi
+    if ! run_build; then
+        echo "$module: build or admission failed" >&2
+        failures="${failures}${failures:+,}$module"
+        continue
+    fi
+    if ! run_verify; then
+        echo "$module: final-byte admission failed" >&2
+        failures="${failures}${failures:+,}$module"
+        continue
     fi
 done
 if ! python3 "$root/scripts/module_set.py" record --directory "$destination" --branch "$branch" \
